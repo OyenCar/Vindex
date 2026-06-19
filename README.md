@@ -1,10 +1,16 @@
 # Vindex
 
 A **private freelance escrow** on the **Canton Network**, where an **AI Agent is the final,
-authoritative validator** — there is no manual dispute layer. Milestone-based, funded by locked
-vaults, governed by a **single investor or a multi-investor Organization that votes**. All
+authoritative arbiter of disputes** — there is no manual dispute layer. Milestone-based, funded by
+locked vaults, governed by a **single investor or a multi-investor Organization that votes**. All
 payments, penalties, deadlines, and milestone progression are enforced automatically and
 deterministically on-ledger.
+
+**Validation model — architecture B (dispute-only AI).** A submission accepted by the investor
+(or by inactivity / quorum-not-met auto-accept) is approved **instantly with no AI involvement**
+and payment is released. The AI Agent is invoked — and the Agent fee is consumed — **only when a
+milestone is rejected** and the dispute is escalated to it. The happy path never touches the Agent;
+the Agent's verdict on a rejection is final.
 
 ## Setup
 
@@ -53,8 +59,9 @@ choice → controller → guard → effect transition table.
   Abstentions are neutral. Each member casts **one vote per cycle**; a revision starts a new cycle.
   `quorumFraction` gates whether a REJECT is actionable.
 - **Voting models**: `SimpleMajority`, `SuperMajority` (e.g. 66/75/80%), `Weighted`.
-- **AI Agent is final** (decision 11): a vote can trigger a REJECT, but only the Agent decides
-  whether the rejection complies with the contract, and its verdict is auto-enforced.
+- **AI Agent is final** (decision 11), and **invoked only on a rejection**: a vote can trigger a
+  REJECT, but only the Agent decides whether the rejection complies with the contract, and its
+  verdict is auto-enforced. Accepted/auto-accepted milestones bypass the Agent entirely.
 
 ## Authorization model
 
@@ -82,8 +89,10 @@ Standard swap touches only the vault, never `Project` logic.
 3. Funds abstracted as `amount : Decimal`; money movement isolated in `AssetVault` (token-standard swap point).
 4. Worker selection is a discretionary governance vote — no bidding, no tie-break.
 5. Failure policy is a governance vote: continue (advance) or stop (settle + refund).
-6. Agent Fee Vault freeze: if the vault cannot pay an Agent op, the action **reverts** (pauses the
-   contract). Resuming requires a top-up, itself a governance vote. Never auto-accept on depletion.
+6. Dispute-only AI + Agent Fee Vault freeze: submissions are free; the Agent fee is consumed only
+   when a rejection is escalated to the Agent (`FinalizeReview` REJECT path). If the vault cannot
+   pay then, the **escalation reverts** (pauses the contract). Resuming requires a top-up, itself a
+   governance vote. Never auto-accept on depletion.
 7. The Investor Party must **overfund** the Budget Vault: `budget ≥ Σ(payment × (1 + p%))`. Unused
    reserve is refunded on completion.
 8. Authorization via `Project` signatories (see above).

@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0b1020;
+  --surface: #121a2b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent: #7c3aed;
+  --accent-glow: rgba(124, 58, 237, 0.35);
+  --success: #10b981;
+  --warning: #f59e0b;
+
+  /* Helvetica Now Display is licensed — drop the real font file in and update this var.
+     Until then we fall back to Inter (loaded via next/font) for a clean, premium look. */
+  --font-display: "Helvetica Now Display", var(--font-inter), "Helvetica Neue",
+    Arial, sans-serif;
+}
+
+* {
+  border-color: hsl(0 0% 100% / 0.06);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* Thin, premium scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.25);
+  border-radius: 999px;
+  border: 3px solid var(--background);
+}
+
+@layer components {
+  /* Frosted glass surface used across cards / navbar / nodes */
+  .glass {
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(255, 255, 255, 0.02) 100%
+    );
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-strong {
+    background: linear-gradient(
+      180deg,
+      rgba(18, 26, 43, 0.85) 0%,
+      rgba(11, 16, 32, 0.7) 100%
+    );
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+@layer utilities {
+  /* Static accent gradient text */
+  .text-gradient {
+    background: linear-gradient(100deg, #c4b5fd 0%, #7c3aed 45%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Animated gradient text for highlighted words */
+  .text-gradient-animated {
+    background: linear-gradient(
+      110deg,
+      #e9d5ff 0%,
+      #a78bfa 25%,
+      #7c3aed 50%,
+      #c4b5fd 75%,
+      #e9d5ff 100%
+    );
+    background-size: 220% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradient-x 6s ease infinite;
+  }
+
+  /* Fine technical grid, faded out toward the edges */
+  .grid-overlay {
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(
+      ellipse 80% 70% at 50% 40%,
+      black 35%,
+      transparent 78%
+    );
+    mask-image: radial-gradient(
+      ellipse 80% 70% at 50% 40%,
+      black 35%,
+      transparent 78%
+    );
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

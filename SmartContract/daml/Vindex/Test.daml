@@ -1,0 +1,294 @@
+-- | Daml Script tests for Vindex. Covers every workflow path plus the voting models,
+--   the money invariant, the overfund check, and the Agent-fee freeze + top-up.
+--
+-- Run: `daml test`
+module Vindex.Test where
+
+import Vindex
+import Daml.Script
+import DA.Time (RelTime, hours, days, addRelTime)
+import DA.List (head)
+
+-- daml.yaml init-script. Intentionally a no-op; `daml test` runs the test scripts below.
+setup : Script ()
+setup = pure ()
+
+-- ---------------------------------------------------------------------------
+-- Shared context + single-investor setup (proves the party-of-one code path)
+-- ---------------------------------------------------------------------------
+
+data Ctx = Ctx
+  with
+    i1 : Party
+    worker : Party
+    agent : Party
+    ip : ContractId InvestorParty
+    proj : ContractId Project
+
+-- | Build a ready-to-run single-investor project (party of one) with the given milestones.
+setupSingle
+  :  [MilestoneSpec] -> Decimal -> Decimal -> Decimal -> Decimal -> Script Ctx
+setupSingle milestones budgetAmount agentFeeAmount agentOpCost commitmentRequired = do
+  i1 <- allocateParty "Investor1"
+  worker <- allocateParty "Worker"
+  agent <- allocateParty "Agent"
+  let cfg = GovernanceConfig with
+        maxInvestors = 3
+        votingModel = SimpleMajority
+        thresholdFraction = 0.5
+        weighted = False
+        quorumFraction = 0.5
+        defaultReviewWindow = hours 24
+  ip <- submit i1 $ createCmd (InvestorParty with
+          admin = i1
+          members = [i1]
+          pending = []
+          contributions = [Contribution with investor = i1, projectFunding = budgetAmount, agentFeeFunding = agentFeeAmount, weight = 1.0]
+          config = cfg
+          agent = agent)
+  (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          requirements = "build it"
+          milestones = milestones
+          budgetAmount = budgetAmount
+          agentFeeAmount = agentFeeAmount
+          agentOpCost = agentOpCost
+          maxSubmissions = 5
+          commitmentRequired = commitmentRequired
+          candidates = [worker])
+  app <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p", contactLink = "l")
+  now <- getTime
+  prop <- submit i1 $ exerciseCmd ip (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
+  prop1 <- submit i1 $ exerciseCmd prop (CastProposalVote with voter = i1, vote = ACCEPT)
+  projProp <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = prop1, applicationCid = app)
+  proj <- submit worker $ exerciseCmd projProp AcceptProposal
+  pure (Ctx with i1, worker, agent, ip, proj)
+
+oneMilestone : Bool -> Decimal -> Decimal -> RelTime -> MilestoneSpec
+oneMilestone isFinal payment p workerWindow = MilestoneSpec with
+  deliverablesHash = "deliv"
+  payment = payment
+  workerWindow = workerWindow
+  reviewWindow = hours 24
+  violationPct = p
+  isFinal = isFinal
+
+assertInvariant : Settlement -> Decimal -> Script ()
+assertInvariant s initialTotal =
+  assertMsg "money invariant: budget + commitment + agentFee + paidOut == initial"
+    (s.refundedBudget + s.refundedCommitment + s.refundedAgentFee + s.totalPaidOut == initialTotal)
+
+-- ---------------------------------------------------------------------------
+-- 1. Multi-investor happy path: formation, selection vote, accept, auto-accept, invariant
+-- ---------------------------------------------------------------------------
+
+testHappyPathMulti : Script ()
+testHappyPathMulti = do
+  i1 <- allocateParty "Investor1"
+  i2 <- allocateParty "Investor2"
+  i3 <- allocateParty "Investor3"
+  worker <- allocateParty "Worker"
+  other <- allocateParty "Worker2"
+  agent <- allocateParty "Agent"
+  let cfg = GovernanceConfig with
+        maxInvestors = 5
+        votingModel = SimpleMajority
+        thresholdFraction = 0.5
+        weighted = False
+        quorumFraction = 0.5
+        defaultReviewWindow = hours 24
+  let mkC p = Contribution with investor = p, projectFunding = 1200.0, agentFeeFunding = 100.0, weight = 1.0
+  -- Party formation via invite/accept (sequential).
+  ip1 <- submit i1 $ createCmd (InvestorParty with admin = i1, members = [i1], pending = [], contributions = [mkC i1], config = cfg, agent = agent)
+  inv2 <- submit i1 $ exerciseCmd ip1 (InviteInvestor with invitee = i2, proposedContribution = mkC i2)
+  ip2 <- submit i2 $ exerciseCmd inv2 AcceptInvite
+  inv3 <- submit i1 $ exerciseCmd ip2 (InviteInvestor with invitee = i3, proposedContribution = mkC i3)
+  ip3 <- submit i3 $ exerciseCmd inv3 AcceptInvite
+  let m1 = oneMilestone False 1000.0 0.1 (hours 48)
+      m2 = oneMilestone True  2000.0 0.1 (hours 48)
+  -- budget required = 1000*1.1 + 2000*1.1 = 3300; fund 3600 (overfunded).
+  (posting, _, _) <- submit i1 $ exerciseCmd ip3 (SetupAndPost with
+          requirements = "Build X", milestones = [m1, m2]
+          budgetAmount = 3600.0, agentFeeAmount = 300.0, agentOpCost = 50.0
+          maxSubmissions = 3, commitmentRequired = 500.0, candidates = [worker, other])
+  -- Two private applications; applicants cannot see each other's.
+  appW <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "pW", contactLink = "lW")
+  _appO <- submit other $ exerciseCmd posting (Apply with applicant = other, presentationHash = "pO", contactLink = "lO")
+  -- Worker selection by governance vote (2/3 ACCEPT >= 0.5 * 3).
+  now <- getTime
+  sp <- submit i1 $ exerciseCmd ip3 (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
+  sp1 <- submit i1 $ exerciseCmd sp (CastProposalVote with voter = i1, vote = ACCEPT)
+  sp2 <- submit i2 $ exerciseCmd sp1 (CastProposalVote with voter = i2, vote = ACCEPT)
+  projProp <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = sp2, applicationCid = appW)
+  proj0 <- submit worker $ exerciseCmd projProp AcceptProposal
+  -- Milestone 1: submit + ACCEPT vote (2/3) -> release + advance.
+  proj1 <- submit worker $ exerciseCmd proj0 (SubmitMilestone with deliverableHash = "d1")
+  r1 <- nextReview i1
+  r1a <- submit i1 $ exerciseCmd r1 (CastVote with voter = i1, vote = ACCEPT)
+  r1b <- submit i2 $ exerciseCmd r1a (CastVote with voter = i2, vote = ACCEPT)
+  Some proj2 <- submit i1 $ exerciseCmd proj1 (FinalizeReview with actor = i1, reviewCid = r1b)
+  -- Milestone 2 (final): submit, then AUTO-ACCEPT on inactivity (no votes, deadline passes).
+  proj3 <- submit worker $ exerciseCmd proj2 (SubmitMilestone with deliverableHash = "d2")
+  r2 <- nextReview i1
+  passTime (hours 25)
+  None <- submit i1 $ exerciseCmd proj3 (FinalizeReview with actor = i1, reviewCid = r2)
+  -- Money invariant after completion.
+  s <- onlySettlement i1
+  -- initial = budget 3600 + commitment 500 + agentFee 300 = 4400
+  assertInvariant s 4400.0
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 2. Overfund check rejects an underfunded budget
+-- ---------------------------------------------------------------------------
+
+testOverfundRejected : Script ()
+testOverfundRejected = do
+  i1 <- allocateParty "Investor1"
+  agent <- allocateParty "Agent"
+  let cfg = GovernanceConfig with
+        maxInvestors = 3, votingModel = SimpleMajority, thresholdFraction = 0.5
+        weighted = False, quorumFraction = 0.5, defaultReviewWindow = hours 24
+  ip <- submit i1 $ createCmd (InvestorParty with
+          admin = i1, members = [i1], pending = []
+          contributions = [Contribution with investor = i1, projectFunding = 1000.0, agentFeeFunding = 50.0, weight = 1.0]
+          config = cfg, agent = agent)
+  let m1 = oneMilestone True 1000.0 0.1 (hours 1)   -- requires 1100
+  -- budget 1000 < required 1100 -> must fail.
+  submitMustFail i1 $ exerciseCmd ip (SetupAndPost with
+          requirements = "x", milestones = [m1]
+          budgetAmount = 1000.0, agentFeeAmount = 50.0, agentOpCost = 10.0
+          maxSubmissions = 1, commitmentRequired = 100.0, candidates = [])
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 3. Voting models: simple majority, super majority, weighted (70/30) — exact thresholds
+-- ---------------------------------------------------------------------------
+
+testVotingModels : Script ()
+testVotingModels = do
+  pA <- allocateParty "A"
+  pB <- allocateParty "B"
+  pC <- allocateParty "C"
+  let eq = [ Contribution with investor = pA, projectFunding = 0.0, agentFeeFunding = 0.0, weight = 1.0
+           , Contribution with investor = pB, projectFunding = 0.0, agentFeeFunding = 0.0, weight = 1.0
+           , Contribution with investor = pC, projectFunding = 0.0, agentFeeFunding = 0.0, weight = 1.0 ]
+  let simple = GovernanceConfig with
+        maxInvestors = 5, votingModel = SimpleMajority, thresholdFraction = 0.5
+        weighted = False, quorumFraction = 0.5, defaultReviewWindow = hours 1
+  assertMsg "simple: 2/3 passes" (proposalPassed simple eq [(pA, ACCEPT), (pB, ACCEPT)])
+  assertMsg "simple: 1/3 fails (quorum + threshold)" (not (proposalPassed simple eq [(pA, ACCEPT)]))
+  let superm = simple with votingModel = SuperMajority, thresholdFraction = 0.66
+  assertMsg "super: 2/3 (0.667) passes" (proposalPassed superm eq [(pA, ACCEPT), (pB, ACCEPT)])
+  assertMsg "super: 1/3 fails" (not (proposalPassed superm eq [(pA, ACCEPT)]))
+  let wcs = [ Contribution with investor = pA, projectFunding = 0.0, agentFeeFunding = 0.0, weight = 70.0
+            , Contribution with investor = pB, projectFunding = 0.0, agentFeeFunding = 0.0, weight = 30.0 ]
+      weighted = GovernanceConfig with
+        maxInvestors = 5, votingModel = Weighted, thresholdFraction = 0.66
+        weighted = True, quorumFraction = 0.0, defaultReviewWindow = hours 1
+  assertMsg "weighted: 70 alone passes (>= 0.66*100)" (proposalPassed weighted wcs [(pA, ACCEPT)])
+  assertMsg "weighted: 30 alone fails" (not (proposalPassed weighted wcs [(pB, ACCEPT)]))
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 4. Valid rejection -> revision -> resubmit -> accept (single investor)
+-- ---------------------------------------------------------------------------
+
+testValidRejectionRevision : Script ()
+testValidRejectionRevision = do
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 200.0 50.0 500.0
+  proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1")
+  r0 <- nextReview ctx.i1
+  r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = REJECT)
+  r2 <- submit ctx.i1 $ exerciseCmd r1 (SetRejectionReasons with actor = ctx.i1, reasons = ["incomplete feature"])
+  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  -- Agent rules the rejection VALID -> worker revises.
+  Some proj3 <- submit ctx.agent $ exerciseCmd proj2 (AgentVerdict with rejectionValid = True)
+  proj4 <- submit ctx.worker $ exerciseCmd proj3 (SubmitMilestone with deliverableHash = "h2")
+  rr <- nextReview ctx.i1
+  rr1 <- submit ctx.i1 $ exerciseCmd rr (CastVote with voter = ctx.i1, vote = ACCEPT)
+  None <- submit ctx.i1 $ exerciseCmd proj4 (FinalizeReview with actor = ctx.i1, reviewCid = rr1)
+  s <- onlySettlement ctx.i1
+  -- initial = 1200 + 500 + 200 = 1900
+  assertInvariant s 1900.0
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 5. Invalid rejection -> investor-party violation (penalty + full payment to worker)
+-- ---------------------------------------------------------------------------
+
+testInvestorViolation : Script ()
+testInvestorViolation = do
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 200.0 50.0 500.0
+  proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1")
+  r0 <- nextReview ctx.i1
+  r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = REJECT)
+  r2 <- submit ctx.i1 $ exerciseCmd r1 (SetRejectionReasons with actor = ctx.i1, reasons = ["bad faith nitpick"])
+  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  -- Agent rules the rejection INVALID -> investor-party violation; worker gets 1000 + 100 bonus.
+  None <- submit ctx.agent $ exerciseCmd proj2 (AgentVerdict with rejectionValid = False)
+  s <- onlySettlement ctx.i1
+  -- paidOut = 1100 (release+bonus) + 50 (one agent op) = 1150
+  assertMsg "worker received payment + penalty bonus" (s.totalPaidOut == 1150.0)
+  assertInvariant s 1900.0
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 6. Worker violation -> failure-stop by governance vote (penalty capped at commitment)
+-- ---------------------------------------------------------------------------
+
+testWorkerViolationStop : Script ()
+testWorkerViolationStop = do
+  let m1 = oneMilestone False 1000.0 0.2 (hours 1)
+      m2 = oneMilestone True  1000.0 0.2 (hours 1)
+  ctx <- setupSingle [m1, m2] 2400.0 200.0 50.0 500.0
+  passTime (hours 2)
+  projF <- submit ctx.i1 $ exerciseCmd ctx.proj (WorkerViolation with actor = ctx.i1)
+  now <- getTime
+  sp <- submit ctx.i1 $ exerciseCmd ctx.ip (OpenProposal with purpose = "stop", action = ResolveStop, deadline = addRelTime now (days 1))
+  sp1 <- submit ctx.i1 $ exerciseCmd sp (CastProposalVote with voter = ctx.i1, vote = ACCEPT)
+  None <- submit ctx.i1 $ exerciseCmd projF (ResolveAfterViolation with actor = ctx.i1, proposalCid = sp1)
+  s <- onlySettlement ctx.i1
+  -- penalty = min(1000*0.2, 500) = 200; commitment refund 300; paidOut 200
+  assertMsg "commitment penalised by 200" (s.refundedCommitment == 300.0)
+  assertInvariant s 3100.0   -- 2400 + 500 + 200
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 7. Agent-fee freeze (architecture B): SUBMIT is free even with an empty vault; the freeze
+--    happens when a REJECT is escalated to the Agent. After a top-up vote, the escalation succeeds.
+-- ---------------------------------------------------------------------------
+
+testAgentFreezeThenTopUp : Script ()
+testAgentFreezeThenTopUp = do
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 0.0 50.0 500.0
+  -- Agent Fee Vault is EMPTY, yet the submission still succeeds (no AI on the happy path).
+  proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h")
+  r0 <- nextReview ctx.i1
+  r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = REJECT)
+  r2 <- submit ctx.i1 $ exerciseCmd r1 (SetRejectionReasons with actor = ctx.i1, reasons = ["disputed"])
+  -- Escalating the rejection needs to pay the Agent op, but the vault is empty -> FREEZE.
+  submitMustFail ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  -- Top up via a governance proposal.
+  now <- getTime
+  tp <- submit ctx.i1 $ exerciseCmd ctx.ip (OpenProposal with purpose = "topup", action = TopUp 100.0, deadline = addRelTime now (days 1))
+  tp1 <- submit ctx.i1 $ exerciseCmd tp (CastProposalVote with voter = ctx.i1, vote = ACCEPT)
+  proj2 <- submit ctx.i1 $ exerciseCmd proj1 (TopUpAgentFee with actor = ctx.i1, proposalCid = tp1)
+  -- Now the escalation to the Agent succeeds -> RejPending.
+  Some _ <- submit ctx.i1 $ exerciseCmd proj2 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- Query helpers
+-- ---------------------------------------------------------------------------
+
+-- | The single active MilestoneReview visible to a member (exactly one per open cycle).
+nextReview : Party -> Script (ContractId MilestoneReview)
+nextReview p = do
+  rs <- query @MilestoneReview p
+  pure (fst (head rs))
+
+-- | The single Settlement visible to a member after completion/stop.
+onlySettlement : Party -> Script Settlement
+onlySettlement p = do
+  ss <- query @Settlement p
+  pure (snd (head ss))
