@@ -1,3 +1,3 @@
 import * as Vindex from './Vindex';
 export { Vindex } ;
-export declare const packageId = '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0';
+export declare const packageId = '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9';

@@ -81,10 +81,11 @@ exports.FinalizeReview = {
 
 
 exports.SubmitMilestone = {
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({deliverableHash: damlTypes.Text.decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({deliverableHash: damlTypes.Text.decoder, deliverableUri: damlTypes.Text.decoder, }); }),
   encode: function (__typed__) {
   return {
     deliverableHash: damlTypes.Text.encode(__typed__.deliverableHash),
+    deliverableUri: damlTypes.Text.encode(__typed__.deliverableUri),
   };
 }
 ,
@@ -94,10 +95,10 @@ exports.SubmitMilestone = {
 
 exports.Project = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:Project',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:Project',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, worker: damlTypes.Party.decoder, agent: damlTypes.Party.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, currentIndex: damlTypes.Int.decoder, status: exports.MStatus.decoder, submissionCount: damlTypes.Int.decoder, maxSubmissions: damlTypes.Int.decoder, workerDeadline: damlTypes.Time.decoder, agentOpCost: damlTypes.Numeric(10).decoder, budgetVault: damlTypes.ContractId(exports.AssetVault).decoder, commitmentVault: damlTypes.ContractId(exports.AssetVault).decoder, agentFeeVault: damlTypes.ContractId(exports.AssetVault).decoder, paidOut: damlTypes.Numeric(10).decoder, currentSubmissionHash: damlTypes.Optional(damlTypes.Text).decoder, rejectionReasons: damlTypes.Optional(damlTypes.List(damlTypes.Text)).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, worker: damlTypes.Party.decoder, agent: damlTypes.Party.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, briefUri: damlTypes.Text.decoder, currentIndex: damlTypes.Int.decoder, status: exports.MStatus.decoder, submissionCount: damlTypes.Int.decoder, maxSubmissions: damlTypes.Int.decoder, workerDeadline: damlTypes.Time.decoder, agentOpCost: damlTypes.Numeric(10).decoder, budgetVault: damlTypes.ContractId(exports.AssetVault).decoder, commitmentVault: damlTypes.ContractId(exports.AssetVault).decoder, agentFeeVault: damlTypes.ContractId(exports.AssetVault).decoder, paidOut: damlTypes.Numeric(10).decoder, currentSubmissionHash: damlTypes.Optional(damlTypes.Text).decoder, currentSubmissionUri: damlTypes.Optional(damlTypes.Text).decoder, rejectionReasons: damlTypes.Optional(damlTypes.List(damlTypes.Text)).decoder, }); }),
   encode: function (__typed__) {
   return {
     investorPartyCid: damlTypes.ContractId(exports.InvestorParty).encode(__typed__.investorPartyCid),
@@ -107,6 +108,7 @@ exports.Project = damlTypes.assembleTemplate(
     worker: damlTypes.Party.encode(__typed__.worker),
     agent: damlTypes.Party.encode(__typed__.agent),
     milestones: damlTypes.List(exports.MilestoneSpec).encode(__typed__.milestones),
+    briefUri: damlTypes.Text.encode(__typed__.briefUri),
     currentIndex: damlTypes.Int.encode(__typed__.currentIndex),
     status: exports.MStatus.encode(__typed__.status),
     submissionCount: damlTypes.Int.encode(__typed__.submissionCount),
@@ -118,6 +120,7 @@ exports.Project = damlTypes.assembleTemplate(
     agentFeeVault: damlTypes.ContractId(exports.AssetVault).encode(__typed__.agentFeeVault),
     paidOut: damlTypes.Numeric(10).encode(__typed__.paidOut),
     currentSubmissionHash: damlTypes.Optional(damlTypes.Text).encode(__typed__.currentSubmissionHash),
+    currentSubmissionUri: damlTypes.Optional(damlTypes.Text).encode(__typed__.currentSubmissionUri),
     rejectionReasons: damlTypes.Optional(damlTypes.List(damlTypes.Text)).encode(__typed__.rejectionReasons),
   };
 }
@@ -183,13 +186,13 @@ exports.Project = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Project, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.Project, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
 exports.Settlement = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:Settlement',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:Settlement',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({members: damlTypes.List(damlTypes.Party).decoder, worker: damlTypes.Party.decoder, agent: damlTypes.Party.decoder, reason: damlTypes.Text.decoder, refundedBudget: damlTypes.Numeric(10).decoder, refundedCommitment: damlTypes.Numeric(10).decoder, refundedAgentFee: damlTypes.Numeric(10).decoder, totalPaidOut: damlTypes.Numeric(10).decoder, }); }),
@@ -219,7 +222,7 @@ exports.Settlement = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Settlement, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.Settlement, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
@@ -247,10 +250,10 @@ exports.AcceptProposal = {
 
 exports.ProjectProposal = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:ProjectProposal',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:ProjectProposal',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, worker: damlTypes.Party.decoder, agent: damlTypes.Party.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, budgetVault: damlTypes.ContractId(exports.AssetVault).decoder, agentFeeVault: damlTypes.ContractId(exports.AssetVault).decoder, agentOpCost: damlTypes.Numeric(10).decoder, maxSubmissions: damlTypes.Int.decoder, commitmentRequired: damlTypes.Numeric(10).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, worker: damlTypes.Party.decoder, agent: damlTypes.Party.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, briefUri: damlTypes.Text.decoder, budgetVault: damlTypes.ContractId(exports.AssetVault).decoder, agentFeeVault: damlTypes.ContractId(exports.AssetVault).decoder, agentOpCost: damlTypes.Numeric(10).decoder, maxSubmissions: damlTypes.Int.decoder, commitmentRequired: damlTypes.Numeric(10).decoder, }); }),
   encode: function (__typed__) {
   return {
     investorPartyCid: damlTypes.ContractId(exports.InvestorParty).encode(__typed__.investorPartyCid),
@@ -260,6 +263,7 @@ exports.ProjectProposal = damlTypes.assembleTemplate(
     worker: damlTypes.Party.encode(__typed__.worker),
     agent: damlTypes.Party.encode(__typed__.agent),
     milestones: damlTypes.List(exports.MilestoneSpec).encode(__typed__.milestones),
+    briefUri: damlTypes.Text.encode(__typed__.briefUri),
     budgetVault: damlTypes.ContractId(exports.AssetVault).encode(__typed__.budgetVault),
     agentFeeVault: damlTypes.ContractId(exports.AssetVault).encode(__typed__.agentFeeVault),
     agentOpCost: damlTypes.Numeric(10).encode(__typed__.agentOpCost),
@@ -297,7 +301,7 @@ exports.ProjectProposal = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.ProjectProposal, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.ProjectProposal, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
@@ -329,7 +333,7 @@ exports.CastVote = {
 
 exports.MilestoneReview = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:MilestoneReview',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:MilestoneReview',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({members: damlTypes.List(damlTypes.Party).decoder, worker: damlTypes.Party.decoder, agent: damlTypes.Party.decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, milestoneIndex: damlTypes.Int.decoder, cycle: damlTypes.Int.decoder, votes: damlTypes.List(pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7.DA.Types.Tuple2(damlTypes.Party, exports.Vote)).decoder, deadline: damlTypes.Time.decoder, rejectionReasons: damlTypes.Optional(damlTypes.List(damlTypes.Text)).decoder, }); }),
@@ -377,7 +381,7 @@ exports.MilestoneReview = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.MilestoneReview, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.MilestoneReview, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
@@ -396,7 +400,7 @@ exports.CastProposalVote = {
 
 exports.GovernanceProposal = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:GovernanceProposal',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:GovernanceProposal',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, agent: damlTypes.Party.decoder, purpose: damlTypes.Text.decoder, action: exports.ProposalAction.decoder, votes: damlTypes.List(pkg40f452260bef3f29dede136108fc08a88d5a5250310281067087da6f0baddff7.DA.Types.Tuple2(damlTypes.Party, exports.Vote)).decoder, deadline: damlTypes.Time.decoder, }); }),
@@ -434,7 +438,7 @@ exports.GovernanceProposal = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.GovernanceProposal, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.GovernanceProposal, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
@@ -453,11 +457,12 @@ exports.SelectWorker = {
 
 
 exports.Apply = {
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({applicant: damlTypes.Party.decoder, presentationHash: damlTypes.Text.decoder, contactLink: damlTypes.Text.decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({applicant: damlTypes.Party.decoder, presentationHash: damlTypes.Text.decoder, presentationUri: damlTypes.Text.decoder, contactLink: damlTypes.Text.decoder, }); }),
   encode: function (__typed__) {
   return {
     applicant: damlTypes.Party.encode(__typed__.applicant),
     presentationHash: damlTypes.Text.encode(__typed__.presentationHash),
+    presentationUri: damlTypes.Text.encode(__typed__.presentationUri),
     contactLink: damlTypes.Text.encode(__typed__.contactLink),
   };
 }
@@ -468,10 +473,10 @@ exports.Apply = {
 
 exports.ProjectPosting = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:ProjectPosting',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:ProjectPosting',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, agent: damlTypes.Party.decoder, requirements: damlTypes.Text.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, budgetVault: damlTypes.ContractId(exports.AssetVault).decoder, agentFeeVault: damlTypes.ContractId(exports.AssetVault).decoder, agentOpCost: damlTypes.Numeric(10).decoder, maxSubmissions: damlTypes.Int.decoder, commitmentRequired: damlTypes.Numeric(10).decoder, candidates: damlTypes.List(damlTypes.Party).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, agent: damlTypes.Party.decoder, requirements: damlTypes.Text.decoder, briefUri: damlTypes.Text.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, budgetVault: damlTypes.ContractId(exports.AssetVault).decoder, agentFeeVault: damlTypes.ContractId(exports.AssetVault).decoder, agentOpCost: damlTypes.Numeric(10).decoder, maxSubmissions: damlTypes.Int.decoder, commitmentRequired: damlTypes.Numeric(10).decoder, workerPool: damlTypes.List(damlTypes.Party).decoder, }); }),
   encode: function (__typed__) {
   return {
     investorPartyCid: damlTypes.ContractId(exports.InvestorParty).encode(__typed__.investorPartyCid),
@@ -480,13 +485,14 @@ exports.ProjectPosting = damlTypes.assembleTemplate(
     config: exports.GovernanceConfig.encode(__typed__.config),
     agent: damlTypes.Party.encode(__typed__.agent),
     requirements: damlTypes.Text.encode(__typed__.requirements),
+    briefUri: damlTypes.Text.encode(__typed__.briefUri),
     milestones: damlTypes.List(exports.MilestoneSpec).encode(__typed__.milestones),
     budgetVault: damlTypes.ContractId(exports.AssetVault).encode(__typed__.budgetVault),
     agentFeeVault: damlTypes.ContractId(exports.AssetVault).encode(__typed__.agentFeeVault),
     agentOpCost: damlTypes.Numeric(10).encode(__typed__.agentOpCost),
     maxSubmissions: damlTypes.Int.encode(__typed__.maxSubmissions),
     commitmentRequired: damlTypes.Numeric(10).encode(__typed__.commitmentRequired),
-    candidates: damlTypes.List(damlTypes.Party).encode(__typed__.candidates),
+    workerPool: damlTypes.List(damlTypes.Party).encode(__typed__.workerPool),
   };
 }
 ,
@@ -519,21 +525,22 @@ exports.ProjectPosting = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.ProjectPosting, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.ProjectPosting, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
 exports.Application = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:Application',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:Application',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({members: damlTypes.List(damlTypes.Party).decoder, applicant: damlTypes.Party.decoder, presentationHash: damlTypes.Text.decoder, contactLink: damlTypes.Text.decoder, postingCid: damlTypes.ContractId(exports.ProjectPosting).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({members: damlTypes.List(damlTypes.Party).decoder, applicant: damlTypes.Party.decoder, presentationHash: damlTypes.Text.decoder, presentationUri: damlTypes.Text.decoder, contactLink: damlTypes.Text.decoder, postingCid: damlTypes.ContractId(exports.ProjectPosting).decoder, }); }),
   encode: function (__typed__) {
   return {
     members: damlTypes.List(damlTypes.Party).encode(__typed__.members),
     applicant: damlTypes.Party.encode(__typed__.applicant),
     presentationHash: damlTypes.Text.encode(__typed__.presentationHash),
+    presentationUri: damlTypes.Text.encode(__typed__.presentationUri),
     contactLink: damlTypes.Text.encode(__typed__.contactLink),
     postingCid: damlTypes.ContractId(exports.ProjectPosting).encode(__typed__.postingCid),
   };
@@ -552,7 +559,7 @@ exports.Application = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.Application, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.Application, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
@@ -580,7 +587,7 @@ exports.AcceptInvite = {
 
 exports.InvestorInvite = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:InvestorInvite',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:InvestorInvite',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({investorPartyCid: damlTypes.ContractId(exports.InvestorParty).decoder, members: damlTypes.List(damlTypes.Party).decoder, admin: damlTypes.Party.decoder, invitee: damlTypes.Party.decoder, proposedContribution: exports.Contribution.decoder, agent: damlTypes.Party.decoder, }); }),
@@ -624,22 +631,23 @@ exports.InvestorInvite = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.InvestorInvite, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.InvestorInvite, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
 exports.SetupAndPost = {
-  decoder: damlTypes.lazyMemo(function () { return jtv.object({requirements: damlTypes.Text.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, budgetAmount: damlTypes.Numeric(10).decoder, agentFeeAmount: damlTypes.Numeric(10).decoder, agentOpCost: damlTypes.Numeric(10).decoder, maxSubmissions: damlTypes.Int.decoder, commitmentRequired: damlTypes.Numeric(10).decoder, candidates: damlTypes.List(damlTypes.Party).decoder, }); }),
+  decoder: damlTypes.lazyMemo(function () { return jtv.object({requirements: damlTypes.Text.decoder, briefUri: damlTypes.Text.decoder, milestones: damlTypes.List(exports.MilestoneSpec).decoder, budgetAmount: damlTypes.Numeric(10).decoder, agentFeeAmount: damlTypes.Numeric(10).decoder, agentOpCost: damlTypes.Numeric(10).decoder, maxSubmissions: damlTypes.Int.decoder, commitmentRequired: damlTypes.Numeric(10).decoder, workerPool: damlTypes.List(damlTypes.Party).decoder, }); }),
   encode: function (__typed__) {
   return {
     requirements: damlTypes.Text.encode(__typed__.requirements),
+    briefUri: damlTypes.Text.encode(__typed__.briefUri),
     milestones: damlTypes.List(exports.MilestoneSpec).encode(__typed__.milestones),
     budgetAmount: damlTypes.Numeric(10).encode(__typed__.budgetAmount),
     agentFeeAmount: damlTypes.Numeric(10).encode(__typed__.agentFeeAmount),
     agentOpCost: damlTypes.Numeric(10).encode(__typed__.agentOpCost),
     maxSubmissions: damlTypes.Int.encode(__typed__.maxSubmissions),
     commitmentRequired: damlTypes.Numeric(10).encode(__typed__.commitmentRequired),
-    candidates: damlTypes.List(damlTypes.Party).encode(__typed__.candidates),
+    workerPool: damlTypes.List(damlTypes.Party).encode(__typed__.workerPool),
   };
 }
 ,
@@ -676,7 +684,7 @@ exports.InviteInvestor = {
 
 exports.InvestorParty = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:InvestorParty',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:InvestorParty',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({admin: damlTypes.Party.decoder, members: damlTypes.List(damlTypes.Party).decoder, pending: damlTypes.List(damlTypes.Party).decoder, contributions: damlTypes.List(exports.Contribution).decoder, config: exports.GovernanceConfig.decoder, agent: damlTypes.Party.decoder, }); }),
@@ -728,7 +736,7 @@ exports.InvestorParty = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.InvestorParty, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.InvestorParty, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 
@@ -782,7 +790,7 @@ exports.Release = {
 
 exports.AssetVault = damlTypes.assembleTemplate(
 {
-  templateId: '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:AssetVault',
+  templateId: '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:AssetVault',
   keyDecoder: damlTypes.lazyMemo(function () { return jtv.constant(undefined); }),
   keyEncode: function () { throw 'EncodeError'; },
   decoder: damlTypes.lazyMemo(function () { return jtv.object({vaultType: exports.VaultType.decoder, funders: damlTypes.List(damlTypes.Party).decoder, stakeholders: damlTypes.List(damlTypes.Party).decoder, amount: damlTypes.Numeric(10).decoder, }); }),
@@ -840,7 +848,7 @@ exports.AssetVault = damlTypes.assembleTemplate(
 );
 
 
-damlTypes.registerTemplate(exports.AssetVault, ['6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0', '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0']);
+damlTypes.registerTemplate(exports.AssetVault, ['10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9', '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9']);
 
 
 

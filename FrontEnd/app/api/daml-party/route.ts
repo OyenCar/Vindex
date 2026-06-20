@@ -40,18 +40,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "identifierHint is required" }, { status: 400 });
   }
 
-  const base = process.env.NEXT_PUBLIC_LEDGER_HTTP_URL ?? "http://localhost:7575/";
-  const res = await fetch(`${base}v1/parties/allocate`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${adminToken()}`, "content-type": "application/json" },
-    body: JSON.stringify({ identifierHint, displayName: body.displayName ?? identifierHint }),
-  });
-  const data = (await res.json()) as { result?: { identifier?: string }; errors?: string[] };
-  if (!res.ok || !data.result?.identifier) {
+  // Server-side fetch needs an ABSOLUTE ledger URL — the browser-facing
+  // NEXT_PUBLIC_LEDGER_HTTP_URL is a relative proxy path ("/ledger/") that can't be
+  // fetched here. Use the proxy target (the real JSON API) instead.
+  const rawBase = process.env.LEDGER_PROXY_TARGET ?? "http://localhost:7575";
+  const base = rawBase.endsWith("/") ? rawBase : `${rawBase}/`;
+
+  try {
+    const res = await fetch(`${base}v1/parties/allocate`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminToken()}`, "content-type": "application/json" },
+      body: JSON.stringify({ identifierHint, displayName: body.displayName ?? identifierHint }),
+    });
+    const text = await res.text();
+    let data: { result?: { identifier?: string }; errors?: string[] } = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      /* non-JSON ledger response; handled below */
+    }
+    if (!res.ok || !data.result?.identifier) {
+      return NextResponse.json(
+        {
+          error:
+            data.errors?.join("; ") ??
+            `allocation failed (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`,
+        },
+        { status: 502 },
+      );
+    }
+    return NextResponse.json({ party: data.result.identifier });
+  } catch (e) {
+    // Always return JSON so the client never hits "Unexpected end of JSON input".
     return NextResponse.json(
-      { error: data.errors?.join("; ") ?? `allocation failed (${res.status})` },
+      { error: `cannot reach ledger for allocation: ${e instanceof Error ? e.message : String(e)}` },
       { status: 502 },
     );
   }
-  return NextResponse.json({ party: data.result.identifier });
 }

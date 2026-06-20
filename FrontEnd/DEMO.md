@@ -55,18 +55,35 @@ npm run dev          # http://localhost:3939/app
 ### Scenario 1 — happy path (no AI)
 1. `/app` → role **Investor** → **Connect party**.
 2. **Create Investor Party** (set the Agent party id) → *Committed on-ledger*.
-3. **Fund Budget + Agent-Fee Vaults & Post Job** (set the Worker candidate party id) → vaults
-   appear under *Escrow Vaults (live)*.
-4. New tab → **Worker** → **Apply**.
-5. Investor → open a SelectWinner proposal + vote + **SelectWorker** (governance).
+3. **Fund Budget + Agent-Fee Vaults & Post Job** → it's an **open posting** published to the
+   registered worker pool (`NEXT_PUBLIC_WORKER_POOL`, defaults to the Worker party); vaults appear
+   under *Escrow Vaults (live)*.
+4. New tab → **Worker** → **Apply** to the open posting.
+5. Investor → under **Applicants**, **Select & make offer** (bundles the governance SelectWinner
+   proposal + passing vote + SelectWorker).
 6. Worker → **Accept & deposit commitment** → **Submit milestone**.
 7. Investor → **Vote Accept** → **Finalize review** → payment releases, project advances; final
    milestone → *Settlements (live)* shows the payout.
 
-### Scenario 2 — dispute → AI verdict
-- At step 7, **Vote Reject** + record reasons → status becomes *Awaiting AI verdict*.
-- Connect as **AI Agent** → on the disputed project choose **Rejection invalid → enforce payout**
-  (investor violation: penalty + full payment) or **Rejection valid → revision**.
+### Scenario 2 — dispute → AI verdict (Claude)
+For a realistic dispute, use the sample files in [`samples/`](../samples):
+- Investor uploads **`project-todo.md`** as the project brief (step 3).
+- Worker uploads **`submission-example.md`** as the deliverable (step 6).
+- Investor pastes the lines from **`rejection-example.md`** into **Vote Reject + record reasons** →
+  status becomes *Awaiting AI verdict* (`RejPending`).
+
+Then connect as **AI Agent**:
+1. On the disputed milestone, click **Run AI arbitration (Claude)**. The agent fetches the to-do list
+   (brief) and the submission from IPFS, plus the rejection reasons, and asks Claude whether the
+   rejection is justified — returning a per-item checklist and a recommendation.
+2. The recommended on-ledger button is highlighted. Click it to write the verdict via
+   `Project.AgentVerdict`:
+   - **Rejection valid → revision** (worker revises), or
+   - **Rejection invalid → enforce payout** (investor violation: penalty + full payment).
+
+> The AI runs **off-ledger** (the Agent is an oracle); only its boolean verdict is committed
+> on-ledger. Requires `OPENROUTER_API_KEY` in `.env.local` (model via `OPENROUTER_MODEL`); without
+> it the agent rules manually.
 
 ### Scenario 3 — missed deadline → penalty
 - With short worker windows (or via `daml script testWorkerViolationStop`), Agent panel →

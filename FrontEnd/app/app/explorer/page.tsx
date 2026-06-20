@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { useStreamQueries } from "@/lib/daml/useStreamQueries";
-import { Vindex, STATUS_LABEL } from "@/lib/daml/vindex";
+import { Vindex } from "@/lib/daml/vindex";
+import { StatusBadge } from "@/components/daml/StatusBadge";
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="glass rounded-2xl p-4">
-      <div className="font-display text-2xl font-bold tabular-nums">{value}</div>
-      <div className="mt-1 text-[12px] text-text-secondary">{label}</div>
+      <div className="text-gradient font-display text-2xl font-bold tabular-nums">{value}</div>
+      <div className="mt-1 text-[11px] uppercase tracking-wide text-text-secondary">{label}</div>
     </div>
   );
 }
@@ -17,7 +18,10 @@ function Stat({ label, value }: { label: string; value: number | string }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="glass overflow-hidden rounded-2xl">
-      <h3 className="border-b border-white/[0.06] px-4 py-3 text-sm font-semibold">{title}</h3>
+      <h3 className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3 text-sm font-semibold">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent-soft shadow-[0_0_8px_rgba(167,139,250,0.7)]" />
+        {title}
+      </h3>
       <div className="divide-y divide-white/[0.04]">{children}</div>
     </section>
   );
@@ -62,12 +66,23 @@ export default function Explorer() {
   const totalLocked = vaults.contracts.reduce((s, v) => s + Number(v.payload.amount), 0);
 
   return (
-    <main className="mx-auto max-w-shell px-5 py-8 sm:px-8">
-      <h1 className="mb-1 text-xl font-semibold">Verdix Explorer</h1>
-      <p className="mb-6 text-[13px] text-text-secondary">
-        Live transparency layer · streaming from the participant · party{" "}
-        <span className="font-mono">{session.party}</span>
-      </p>
+    <main className="mx-auto max-w-shell px-5 py-10 sm:px-8">
+      <header className="mb-8">
+        <span className="glass inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-medium text-text-primary">
+          <span className="h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_8px_#10B981] animate-glow-pulse" />
+          Live transparency layer
+        </span>
+        <h1
+          className="mt-5 font-display font-black tracking-tightest text-text-primary"
+          style={{ fontSize: "clamp(1.9rem, 4vw, 2.75rem)", lineHeight: 1.02 }}
+        >
+          Live <span className="text-gradient-animated">Explorer</span>
+        </h1>
+        <p className="mt-3 text-[13px] text-text-secondary">
+          Streaming from the participant · party{" "}
+          <span className="font-mono text-text-primary/80">{session.party}</span>
+        </p>
+      </header>
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <Stat label="Investor Parties" value={parties.contracts.length} />
@@ -88,7 +103,7 @@ export default function Explorer() {
               <Row
                 key={p.contractId}
                 left={`Milestone ${Number(p.payload.currentIndex) + 1}/${p.payload.milestones.length} · sub ${p.payload.submissionCount}`}
-                right={STATUS_LABEL[p.payload.status] ?? p.payload.status}
+                right={<StatusBadge status={p.payload.status} />}
               />
             ))
           )}

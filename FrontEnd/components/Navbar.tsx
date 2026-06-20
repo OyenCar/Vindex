@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion, useScroll, useMotionValueEvent } from "framer-motion";
 import { ArrowRight, FileText, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 
+// In-page sections (these anchors now resolve to real sections on the landing page) plus the
+// live console route.
 const NAV_LINKS = [
-  { label: "Protocol", href: "#protocol" },
+  { label: "System", href: "#system" },
   { label: "How It Works", href: "#how-it-works" },
-  { label: "Governance", href: "#governance" },
-  { label: "Security", href: "#security" },
-  { label: "Documentation", href: "#docs" },
+  { label: "Tech Stack", href: "#stack" },
+  { label: "Console", href: "/app" },
 ];
+
+const DOCS_URL = "https://github.com/OyenCar/Vindex";
 
 function Logo() {
   return (
@@ -89,31 +93,33 @@ export function Navbar() {
 
         <div className="hidden items-center gap-1 lg:flex">
           {NAV_LINKS.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
               className="rounded-full px-3.5 py-2 text-[14px] text-text-secondary transition-colors hover:text-text-primary"
             >
               {link.label}
-            </a>
+            </Link>
           ))}
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
           <a
-            href="#whitepaper"
+            href={DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
             className={buttonVariants({ variant: "ghost", size: "sm" })}
           >
             <FileText className="h-4 w-4" />
-            View Whitepaper
+            Documentation
           </a>
-          <a
-            href="#app"
+          <Link
+            href="/app"
             className={buttonVariants({ variant: "primary", size: "sm" })}
           >
             Launch App
             <ArrowRight className="h-4 w-4" />
-          </a>
+          </Link>
         </div>
 
         <button
@@ -155,31 +161,40 @@ export function Navbar() {
               </div>
 
               {NAV_LINKS.map((link, i) => (
-                <motion.a
+                <motion.div
                   key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.06 * i + 0.08 }}
-                  className="rounded-xl px-4 py-3 text-lg text-text-secondary hover:bg-white/5 hover:text-text-primary"
                 >
-                  {link.label}
-                </motion.a>
+                  <Link
+                    href={link.href}
+                    onClick={() => setOpen(false)}
+                    className="block rounded-xl px-4 py-3 text-lg text-text-secondary hover:bg-white/5 hover:text-text-primary"
+                  >
+                    {link.label}
+                  </Link>
+                </motion.div>
               ))}
 
               <div className="mt-auto flex flex-col gap-3 pt-6">
                 <a
-                  href="#whitepaper"
+                  href={DOCS_URL}
+                  target="_blank"
+                  rel="noreferrer"
                   className={buttonVariants({ variant: "secondary", size: "lg" })}
                 >
                   <FileText className="h-4 w-4" />
-                  View Whitepaper
+                  Documentation
                 </a>
-                <Button size="lg" onClick={() => setOpen(false)}>
+                <Link
+                  href="/app"
+                  onClick={() => setOpen(false)}
+                  className={buttonVariants({ variant: "primary", size: "lg" })}
+                >
                   Launch App
                   <ArrowRight className="h-4 w-4" />
-                </Button>
+                </Link>
               </div>
             </motion.aside>
           </>

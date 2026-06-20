@@ -20,6 +20,15 @@ export const damlConfig = {
     worker: process.env.NEXT_PUBLIC_PARTY_WORKER ?? "",
     agent: process.env.NEXT_PUBLIC_PARTY_AGENT ?? "",
   } satisfies Record<Role, string>,
+  // Open-job audience: the registered worker parties a NEW posting is published to. These become
+  // observers of the posting (Canton has no global read, so the audience is an explicit set) and
+  // are the parties allowed to apply. The investor does NOT hand-pick a winner — selection is a
+  // governance vote over whoever applied. Comma-separated NEXT_PUBLIC_WORKER_POOL; falls back to
+  // the single known worker party so a fresh demo works with zero extra config.
+  workerPool: (process.env.NEXT_PUBLIC_WORKER_POOL ?? process.env.NEXT_PUBLIC_PARTY_WORKER ?? "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean),
 } as const;
 
 export function explorerHint(): string {

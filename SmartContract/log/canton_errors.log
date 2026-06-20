@@ -1,0 +1,7 @@
+2026-06-20 12:17:48,691 [main] INFO  c.d.c.e.CommunityEnvironment tid:aef3f0006b091472fd4bdd43ba6a5758 - Automatically starting all instances
+2026-06-20 12:17:52,613 [main] ERROR c.d.c.e.CommunityEnvironment tid:aef3f0006b091472fd4bdd43ba6a5758 - Failed to start sandbox: Ledger API server failed to start: FailedToStartLedgerApiServer(
+  com.digitalasset.canton.ledger.error.IndexErrors$IndexDbException: INTERNAL: An error occurred. Please contact the operator and inquire about the request <no-correlation-id> with tid <no-tid>
+
+)
+2026-06-20 23:30:09,450 [main] INFO  c.d.c.e.CommunityEnvironment tid:1ca50e53b6523d84c85460356fd3d4ec - Automatically starting all instances
+2026-06-20 23:30:10,121 [main] ERROR c.d.c.e.CommunityEnvironment tid:1ca50e53b6523d84c85460356fd3d4ec - Failed to start local: Failed to bind to address /127.0.0.1:6868

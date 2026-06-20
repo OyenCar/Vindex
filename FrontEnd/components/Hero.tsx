@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion, type Variants } from "framer-motion";
 import {
   ArrowRight,
@@ -8,18 +9,19 @@ import {
   ShieldCheck,
   Sparkles,
   Timer,
-  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MetricCard, type Metric } from "@/components/MetricCard";
 import { ProtocolVisualization } from "@/components/ProtocolVisualization";
 import { WalletSupport } from "@/components/WalletSupport";
 
+// Protocol facts that are true regardless of usage — no fabricated traction (no invented
+// "$ secured", success rates, or user counts, which destroy trust with an institutional audience).
 const METRICS: Metric[] = [
-  { label: "Escrow Secured", icon: ShieldCheck, prefix: "$", value: 12.4, suffix: "M+", decimals: 1 },
-  { label: "Disputes Resolved", icon: Scale, value: 98.7, suffix: "%", decimals: 1 },
-  { label: "Average Settlement Time", icon: Timer, prefix: "< ", value: 2, suffix: " min" },
-  { label: "Investor Parties", icon: Users, value: 1200, suffix: "+", separator: true },
+  { label: "On-Ledger Enforcement", icon: ShieldCheck, value: 100, suffix: "%" },
+  { label: "Custodial Intermediaries", icon: Scale, value: 0 },
+  { label: "Settlement Finality", icon: Timer, prefix: "< ", value: 2, suffix: " sec" },
+  { label: "Escrow Vault Types", icon: Shield, value: 3 },
 ];
 
 const container: Variants = {
@@ -72,24 +74,28 @@ export function Hero() {
             className="mt-7 max-w-[640px] text-[17px] leading-relaxed text-text-secondary sm:text-lg"
           >
             Verdix combines escrow vaults, milestone-based payments, investor
-            governance, and AI-powered dispute resolution into a single trustless
-            protocol. If both parties agree, payments move instantly. If they
-            disagree, AI enforces the contract.
+            governance, and AI-powered dispute resolution into a single
+            Canton-native protocol. If both parties agree, payments move instantly.
+            If they disagree, AI enforces the contract.
           </motion.p>
 
           {/* CTAs */}
           <motion.div variants={item} className="mt-9 flex flex-wrap items-center gap-3">
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-              <Button size="lg" className="shadow-glow">
-                Start Building
-                <ArrowRight className="h-[18px] w-[18px]" />
-              </Button>
+              <Link href="/app">
+                <Button size="lg" className="shadow-glow">
+                  Launch Console
+                  <ArrowRight className="h-[18px] w-[18px]" />
+                </Button>
+              </Link>
             </motion.div>
             <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
-              <Button size="lg" variant="secondary">
-                <Shield className="h-[18px] w-[18px]" />
-                Explore Protocol
-              </Button>
+              <Link href="/app/explorer">
+                <Button size="lg" variant="secondary">
+                  <Shield className="h-[18px] w-[18px]" />
+                  Explore the Ledger
+                </Button>
+              </Link>
             </motion.div>
           </motion.div>
 
@@ -99,7 +105,7 @@ export function Hero() {
             className="mt-8 flex items-center gap-2 text-[13px] text-text-secondary"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_8px_#10B981]" />
-            Non-custodial · Deterministic on-chain enforcement · Canton Network
+            Canton-native · Deterministic escrow enforcement · Privacy-preserving ledger
           </motion.div>
         </motion.div>
 

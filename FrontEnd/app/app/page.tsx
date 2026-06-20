@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { ErrorBoundary } from "@/components/daml/ErrorBoundary";
 import { PartyConnect } from "@/components/daml/PartyConnect";
@@ -14,17 +12,22 @@ function Dapp() {
   const { session } = useDaml();
 
   return (
-    <main className="relative mx-auto min-h-screen w-full max-w-shell px-5 py-8 sm:px-8">
-      <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="text-text-secondary transition-colors hover:text-text-primary">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <span className="text-lg font-semibold tracking-tight">Verdix Protocol Console</span>
-          <span className="hidden rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-text-secondary sm:inline">
-            Canton · {damlConfig.httpBaseUrl}
-          </span>
-        </div>
+    <main className="relative mx-auto min-h-screen w-full max-w-shell px-5 py-10 sm:px-8">
+      <header className="mb-8">
+        <span className="glass inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[12px] font-medium text-text-primary">
+          <span className="h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_8px_#10B981]" />
+          Live on Canton · {damlConfig.httpBaseUrl}
+        </span>
+        <h1
+          className="mt-5 font-display font-black tracking-tightest text-text-primary"
+          style={{ fontSize: "clamp(1.9rem, 4vw, 2.75rem)", lineHeight: 1.02 }}
+        >
+          Protocol <span className="text-gradient-animated">Console</span>
+        </h1>
+        <p className="mt-3 max-w-xl text-[15px] text-text-secondary">
+          Connect as an Investor, Worker, or AI Agent. Every action runs a real Daml command on the
+          participant — and every panel streams live from the ledger.
+        </p>
       </header>
 
       <div className="mb-8 max-w-md">

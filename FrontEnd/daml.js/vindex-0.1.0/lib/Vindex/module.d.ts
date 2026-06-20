@@ -66,6 +66,7 @@ export declare const FinalizeReview:
 
 export declare type SubmitMilestone = {
   deliverableHash: string;
+  deliverableUri: string;
 };
 
 export declare const SubmitMilestone:
@@ -82,6 +83,7 @@ export declare type Project = {
   worker: damlTypes.Party;
   agent: damlTypes.Party;
   milestones: MilestoneSpec[];
+  briefUri: string;
   currentIndex: damlTypes.Int;
   status: MStatus;
   submissionCount: damlTypes.Int;
@@ -93,6 +95,7 @@ export declare type Project = {
   agentFeeVault: damlTypes.ContractId<AssetVault>;
   paidOut: damlTypes.Numeric;
   currentSubmissionHash: damlTypes.Optional<string>;
+  currentSubmissionUri: damlTypes.Optional<string>;
   rejectionReasons: damlTypes.Optional<string[]>;
 };
 
@@ -106,7 +109,7 @@ export declare interface ProjectInterface {
   Archive: damlTypes.Choice<Project, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
 }
 export declare const Project:
-  damlTypes.Template<Project, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:Project'> &
+  damlTypes.Template<Project, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:Project'> &
   damlTypes.ToInterface<Project, never> &
   ProjectInterface;
 
@@ -134,7 +137,7 @@ export declare interface SettlementInterface {
   Archive: damlTypes.Choice<Settlement, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Settlement, undefined>>;
 }
 export declare const Settlement:
-  damlTypes.Template<Settlement, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:Settlement'> &
+  damlTypes.Template<Settlement, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:Settlement'> &
   damlTypes.ToInterface<Settlement, never> &
   SettlementInterface;
 
@@ -173,6 +176,7 @@ export declare type ProjectProposal = {
   worker: damlTypes.Party;
   agent: damlTypes.Party;
   milestones: MilestoneSpec[];
+  briefUri: string;
   budgetVault: damlTypes.ContractId<AssetVault>;
   agentFeeVault: damlTypes.ContractId<AssetVault>;
   agentOpCost: damlTypes.Numeric;
@@ -186,7 +190,7 @@ export declare interface ProjectProposalInterface {
   RejectProposal: damlTypes.Choice<ProjectProposal, RejectProposal, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ProjectProposal, undefined>>;
 }
 export declare const ProjectProposal:
-  damlTypes.Template<ProjectProposal, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:ProjectProposal'> &
+  damlTypes.Template<ProjectProposal, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:ProjectProposal'> &
   damlTypes.ToInterface<ProjectProposal, never> &
   ProjectProposalInterface;
 
@@ -240,7 +244,7 @@ export declare interface MilestoneReviewInterface {
   Archive: damlTypes.Choice<MilestoneReview, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<MilestoneReview, undefined>>;
 }
 export declare const MilestoneReview:
-  damlTypes.Template<MilestoneReview, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:MilestoneReview'> &
+  damlTypes.Template<MilestoneReview, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:MilestoneReview'> &
   damlTypes.ToInterface<MilestoneReview, never> &
   MilestoneReviewInterface;
 
@@ -280,7 +284,7 @@ export declare interface GovernanceProposalInterface {
   Archive: damlTypes.Choice<GovernanceProposal, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<GovernanceProposal, undefined>>;
 }
 export declare const GovernanceProposal:
-  damlTypes.Template<GovernanceProposal, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:GovernanceProposal'> &
+  damlTypes.Template<GovernanceProposal, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:GovernanceProposal'> &
   damlTypes.ToInterface<GovernanceProposal, never> &
   GovernanceProposalInterface;
 
@@ -308,6 +312,7 @@ export declare const SelectWorker:
 export declare type Apply = {
   applicant: damlTypes.Party;
   presentationHash: string;
+  presentationUri: string;
   contactLink: string;
 };
 
@@ -324,13 +329,14 @@ export declare type ProjectPosting = {
   config: GovernanceConfig;
   agent: damlTypes.Party;
   requirements: string;
+  briefUri: string;
   milestones: MilestoneSpec[];
   budgetVault: damlTypes.ContractId<AssetVault>;
   agentFeeVault: damlTypes.ContractId<AssetVault>;
   agentOpCost: damlTypes.Numeric;
   maxSubmissions: damlTypes.Int;
   commitmentRequired: damlTypes.Numeric;
-  candidates: damlTypes.Party[];
+  workerPool: damlTypes.Party[];
 };
 
 export declare interface ProjectPostingInterface {
@@ -339,7 +345,7 @@ export declare interface ProjectPostingInterface {
   Archive: damlTypes.Choice<ProjectPosting, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ProjectPosting, undefined>>;
 }
 export declare const ProjectPosting:
-  damlTypes.Template<ProjectPosting, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:ProjectPosting'> &
+  damlTypes.Template<ProjectPosting, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:ProjectPosting'> &
   damlTypes.ToInterface<ProjectPosting, never> &
   ProjectPostingInterface;
 
@@ -356,6 +362,7 @@ export declare type Application = {
   members: damlTypes.Party[];
   applicant: damlTypes.Party;
   presentationHash: string;
+  presentationUri: string;
   contactLink: string;
   postingCid: damlTypes.ContractId<ProjectPosting>;
 };
@@ -364,7 +371,7 @@ export declare interface ApplicationInterface {
   Archive: damlTypes.Choice<Application, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Application, undefined>>;
 }
 export declare const Application:
-  damlTypes.Template<Application, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:Application'> &
+  damlTypes.Template<Application, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:Application'> &
   damlTypes.ToInterface<Application, never> &
   ApplicationInterface;
 
@@ -410,7 +417,7 @@ export declare interface InvestorInviteInterface {
   DeclineInvite: damlTypes.Choice<InvestorInvite, DeclineInvite, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<InvestorInvite, undefined>>;
 }
 export declare const InvestorInvite:
-  damlTypes.Template<InvestorInvite, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:InvestorInvite'> &
+  damlTypes.Template<InvestorInvite, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:InvestorInvite'> &
   damlTypes.ToInterface<InvestorInvite, never> &
   InvestorInviteInterface;
 
@@ -425,13 +432,14 @@ export declare namespace InvestorInvite {
 
 export declare type SetupAndPost = {
   requirements: string;
+  briefUri: string;
   milestones: MilestoneSpec[];
   budgetAmount: damlTypes.Numeric;
   agentFeeAmount: damlTypes.Numeric;
   agentOpCost: damlTypes.Numeric;
   maxSubmissions: damlTypes.Int;
   commitmentRequired: damlTypes.Numeric;
-  candidates: damlTypes.Party[];
+  workerPool: damlTypes.Party[];
 };
 
 export declare const SetupAndPost:
@@ -479,7 +487,7 @@ export declare interface InvestorPartyInterface {
   OpenProposal: damlTypes.Choice<InvestorParty, OpenProposal, damlTypes.ContractId<GovernanceProposal>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<InvestorParty, undefined>>;
 }
 export declare const InvestorParty:
-  damlTypes.Template<InvestorParty, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:InvestorParty'> &
+  damlTypes.Template<InvestorParty, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:InvestorParty'> &
   damlTypes.ToInterface<InvestorParty, never> &
   InvestorPartyInterface;
 
@@ -547,7 +555,7 @@ export declare interface AssetVaultInterface {
   Settle: damlTypes.Choice<AssetVault, Settle, damlTypes.Numeric, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<AssetVault, undefined>>;
 }
 export declare const AssetVault:
-  damlTypes.Template<AssetVault, undefined, '6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:AssetVault'> &
+  damlTypes.Template<AssetVault, undefined, '10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9:Vindex:AssetVault'> &
   damlTypes.ToInterface<AssetVault, never> &
   AssetVaultInterface;
 

@@ -254,23 +254,29 @@ template InvestorParty
 
     -- Fund the vaults and publish the posting in one go.
     -- OVERFUND CHECK (locked decision 7) is enforced here.
+    -- OPEN POSTING: the job is NOT pinned to one hand-picked worker. `workerPool` is the
+    -- marketplace audience — the registered worker parties who can SEE the posting and apply
+    -- to it (Canton has no public/global read, so an explicit observer set is required). The
+    -- investor does not choose a winner here; selection happens later by governance vote over
+    -- whoever applied.
     nonconsuming choice SetupAndPost
         : (ContractId ProjectPosting, ContractId AssetVault, ContractId AssetVault)
       with
         requirements : Text
+        briefUri : Text            -- ^ IPFS CID of the off-ledger project brief/files ("" if none)
         milestones : [MilestoneSpec]
         budgetAmount : Decimal
         agentFeeAmount : Decimal
         agentOpCost : Decimal
         maxSubmissions : Int
         commitmentRequired : Decimal
-        candidates : [Party]
+        workerPool : [Party]       -- ^ registered workers who can see & apply (the open audience)
       controller admin
       do
         assertMsg "milestones must be non-empty" (not (null milestones))
         -- LOCKED DECISION 7: total budget >= Σ(payment × (1 + p%))
         assertMsg "Budget Vault underfunded" (budgetAmount >= requiredBudget milestones)
-        let stake = members ++ (agent :: candidates)
+        let stake = members ++ (agent :: workerPool)
         -- MONEY MOVEMENT: create the Budget Vault (funder side = Investor Party members).
         budget <- create AssetVault with
           vaultType = BudgetV
@@ -290,13 +296,14 @@ template InvestorParty
           config
           agent
           requirements
+          briefUri
           milestones
           budgetVault = budget
           agentFeeVault = agentFee
           agentOpCost
           maxSubmissions
           commitmentRequired
-          candidates
+          workerPool
         pure (posting, budget, agentFee)
 
 -- | Propose-accept join flow. The invitee must explicitly accept to become a signatory.
@@ -334,16 +341,17 @@ template InvestorInvite
       do pure ()
 
 -- ---------------------------------------------------------------------------
--- Hiring: posting + private applications + governance-selected worker
+-- Hiring: OPEN posting + private applications + governance-selected worker
 -- ---------------------------------------------------------------------------
 
--- | A private application. Visible only to the applicant (signatory) and the Investor Party
---   (observer). Applicants cannot see each other's applications.
+-- | A private application to an open posting. Visible only to the applicant (signatory) and the
+--   Investor Party (observer). Applicants cannot see each other's applications.
 template Application
   with
     members : [Party]
     applicant : Party
     presentationHash : Text   -- ^ hash; raw presentation off-ledger
+    presentationUri : Text    -- ^ IPFS CID of the off-ledger portfolio/presentation ("" if none)
     contactLink : Text        -- ^ visible to this contract's observers only
     postingCid : ContractId ProjectPosting
   where
@@ -358,30 +366,35 @@ template ProjectPosting
     config : GovernanceConfig
     agent : Party
     requirements : Text
+    briefUri : Text
     milestones : [MilestoneSpec]
     budgetVault : ContractId AssetVault
     agentFeeVault : ContractId AssetVault
     agentOpCost : Decimal
     maxSubmissions : Int
     commitmentRequired : Decimal
-    candidates : [Party]
+    workerPool : [Party]          -- ^ registered workers who can see & apply (the open audience)
   where
     signatory members
-    observer (agent :: candidates)
+    observer (agent :: workerPool)
 
-    -- A jobseeker applies privately.
+    -- A jobseeker applies privately to this open posting. Any worker in the pool may apply;
+    -- the investor has NOT pre-selected anyone. (The pool gate is just the Canton visibility
+    -- set — you can only apply to a posting you can see.)
     nonconsuming choice Apply : ContractId Application
       with
         applicant : Party
         presentationHash : Text
+        presentationUri : Text
         contactLink : Text
       controller applicant
       do
-        assertMsg "not an invited candidate" (applicant `elem` candidates)
+        assertMsg "applicant is not in the worker pool" (applicant `elem` workerPool)
         create Application with
           members
           applicant
           presentationHash
+          presentationUri
           contactLink
           postingCid = self
 
@@ -411,6 +424,7 @@ template ProjectPosting
           worker = chosen
           agent
           milestones
+          briefUri
           budgetVault
           agentFeeVault
           agentOpCost
@@ -499,6 +513,7 @@ template ProjectProposal
     worker : Party
     agent : Party
     milestones : [MilestoneSpec]
+    briefUri : Text
     budgetVault : ContractId AssetVault
     agentFeeVault : ContractId AssetVault
     agentOpCost : Decimal
@@ -531,6 +546,7 @@ template ProjectProposal
           worker
           agent
           milestones
+          briefUri
           currentIndex = 0
           status = Active
           submissionCount = 0
@@ -542,6 +558,7 @@ template ProjectProposal
           agentFeeVault
           paidOut = 0.0
           currentSubmissionHash = None
+          currentSubmissionUri = None
           rejectionReasons = None
 
     choice RejectProposal : ()
@@ -577,6 +594,7 @@ template Project
     worker : Party
     agent : Party
     milestones : [MilestoneSpec]
+    briefUri : Text                         -- ^ IPFS CID of the project brief (carried from posting)
     currentIndex : Int
     status : MStatus
     submissionCount : Int
@@ -588,6 +606,7 @@ template Project
     agentFeeVault : ContractId AssetVault
     paidOut : Decimal
     currentSubmissionHash : Optional Text
+    currentSubmissionUri : Optional Text    -- ^ IPFS CID of the latest deliverable the Agent judges
     rejectionReasons : Optional [Text]
   where
     signatory members, worker
@@ -600,7 +619,9 @@ template Project
     -- rejection is escalated to it (see FinalizeReview REJECT path). The happy path never touches
     -- the Agent: investor ACCEPT or inactivity/quorum AUTO-ACCEPT releases payment with zero AI.
     choice SubmitMilestone : ContractId Project
-      with deliverableHash : Text
+      with
+        deliverableHash : Text
+        deliverableUri : Text
       controller worker
       do
         assertMsg "not in a submittable state" (status == Active || status == Revision)
@@ -624,6 +645,7 @@ template Project
           status = Submitted
           submissionCount = submissionCount + 1
           currentSubmissionHash = Some deliverableHash
+          currentSubmissionUri = Some deliverableUri
 
     -- A member finalizes the review once votes are in (or the deadline has passed).
     -- Returns Optional (ContractId Project): None signals completion (locked decision 9).
@@ -733,6 +755,7 @@ template Project
                   submissionCount = 0
                   workerDeadline = addRelTime now next.workerWindow
                   currentSubmissionHash = None
+                  currentSubmissionUri = None
                   rejectionReasons = None
                 pure (Some cid)
           ResolveStop -> do
@@ -794,6 +817,7 @@ acceptAndAdvance p bonus = do
         budgetVault = nb
         paidOut = p.paidOut + paid
         currentSubmissionHash = None
+        currentSubmissionUri = None
         rejectionReasons = None
       pure (Some cid)
 

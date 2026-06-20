@@ -5,7 +5,9 @@ import { useDaml } from "@/components/daml/DamlProvider";
 import { useStreamQueries } from "@/lib/daml/useStreamQueries";
 import { useCommand } from "@/lib/daml/useCommand";
 import { TxStatus } from "@/components/daml/TxStatus";
+import { FileUpload } from "@/components/daml/FileUpload";
 import { Button } from "@/components/ui/button";
+import { ipfsUrl } from "@/lib/daml/storage";
 import { Vindex, STATUS_LABEL } from "@/lib/daml/vindex";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -31,14 +33,16 @@ export function WorkerPanel() {
   const acceptCmd = useCommand<unknown>();
   const submitCmd = useCommand<unknown>();
 
-  const [hash, setHash] = useState("sha256:milestone-1-deliverable");
+  const [presentationCid, setPresentationCid] = useState("");
+  const [deliverableCid, setDeliverableCid] = useState("");
 
   const apply = (postingCid: (typeof postings.contracts)[number]["contractId"]) =>
     applyCmd
       .run(() =>
         session!.ledger.exercise(Vindex.ProjectPosting.Apply, postingCid, {
           applicant: party,
-          presentationHash: "sha256:portfolio",
+          presentationHash: presentationCid || "sha256:portfolio",
+          presentationUri: presentationCid,
           contactLink: "https://verdix.app/contact/me",
         }),
       )
@@ -56,7 +60,8 @@ export function WorkerPanel() {
     submitCmd
       .run(() =>
         session!.ledger.exercise(Vindex.Project.SubmitMilestone, projectCid, {
-          deliverableHash: hash,
+          deliverableHash: deliverableCid,
+          deliverableUri: deliverableCid,
         }),
       )
       .catch(() => undefined);
@@ -71,10 +76,21 @@ export function WorkerPanel() {
         ) : (
           <ul className="flex flex-col gap-2">
             {postings.contracts.map((p) => (
-              <li key={p.contractId} className="rounded-lg border border-white/8 p-3">
-                <p className="mb-2 text-[13px] text-text-primary">{p.payload.requirements}</p>
+              <li key={p.contractId} className="flex flex-col gap-2 rounded-lg border border-white/8 p-3">
+                <p className="text-[13px] text-text-primary">{p.payload.requirements}</p>
+                {ipfsUrl(p.payload.briefUri) && (
+                  <a
+                    href={ipfsUrl(p.payload.briefUri)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[12px] text-accent-soft hover:underline"
+                  >
+                    View project brief ↗
+                  </a>
+                )}
+                <FileUpload label="Your portfolio / presentation (→ IPFS, optional)" cid={presentationCid} onUploaded={setPresentationCid} />
                 <Button size="sm" onClick={() => apply(p.contractId)} disabled={applyCmd.phase === "submitting"}>
-                  Apply (submit presentation)
+                  Apply{presentationCid ? " (with portfolio)" : ""}
                 </Button>
               </li>
             ))}
@@ -118,12 +134,12 @@ export function WorkerPanel() {
                   </p>
                   {submittable && (
                     <div className="flex flex-col gap-2">
-                      <input
-                        value={hash}
-                        onChange={(e) => setHash(e.target.value)}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 font-mono text-[12px] text-text-primary outline-none focus:border-accent/50"
-                      />
-                      <Button size="sm" onClick={() => submit(p.contractId)} disabled={submitCmd.phase === "submitting"}>
+                      <FileUpload label="Deliverable file (→ IPFS)" cid={deliverableCid} onUploaded={setDeliverableCid} />
+                      <Button
+                        size="sm"
+                        onClick={() => submit(p.contractId)}
+                        disabled={submitCmd.phase === "submitting" || !deliverableCid}
+                      >
                         Submit milestone
                       </Button>
                     </div>
