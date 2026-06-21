@@ -32,6 +32,7 @@ function DisputeCard({
 }) {
   const reasons = p.payload.rejectionReasons ?? [];
   const todoUrl = ipfsUrl(p.payload.briefUri);
+  const requirements = p.payload.requirements?.trim() ?? "";
   const submissionUrl = ipfsUrl(p.payload.currentSubmissionUri);
 
   const [todoPaste, setTodoPaste] = useState("");
@@ -46,7 +47,9 @@ function DisputeCard({
     setAi(null);
     try {
       const result = await runAgentVerdict({
-        todoText: todoPaste || undefined,
+        // Brief (IPFS) is preferred by the route; the on-ledger description is the always-present
+        // fallback so the agent has a to-do even when the brief failed to pin.
+        todoText: todoPaste || requirements || undefined,
         todoUri: p.payload.briefUri,
         submissionText: submissionPaste || undefined,
         submissionUri: p.payload.currentSubmissionUri,
@@ -71,23 +74,35 @@ function DisputeCard({
         <span className="ml-1 text-text-primary">{reasons.length ? reasons.join("; ") : "—"}</span>
       </div>
 
-      <div className="flex flex-wrap gap-3 text-[12px]">
+      {/* The agent uses the to-do (brief from IPFS, else the on-ledger project description) and the
+          deliverable. The paste boxes only appear as a fallback when neither source is available
+          (e.g. a file was stored as a non-retrievable local- stand-in). */}
+      <div className="flex flex-col gap-1 text-[12px]">
         {todoUrl ? (
-          <a href={todoUrl} target="_blank" rel="noreferrer" className="text-accent-soft hover:underline">
-            Project to-do (brief) ↗
-          </a>
+          <span className="text-success">
+            ✓ Project to-do auto-loaded from IPFS brief ·{" "}
+            <a href={todoUrl} target="_blank" rel="noreferrer" className="text-accent-soft hover:underline">
+              view ↗
+            </a>
+          </span>
+        ) : requirements ? (
+          <span className="text-success">✓ Project to-do from the on-ledger project description</span>
         ) : (
-          <span className="text-text-secondary">No brief on ledger — paste the to-do below.</span>
+          <span className="text-amber-300">No to-do on ledger — paste it below.</span>
         )}
-        {submissionUrl && (
-          <a href={submissionUrl} target="_blank" rel="noreferrer" className="text-accent-soft hover:underline">
-            Disputed deliverable ↗
-          </a>
+        {submissionUrl ? (
+          <span className="text-success">
+            ✓ Deliverable auto-loaded from IPFS ·{" "}
+            <a href={submissionUrl} target="_blank" rel="noreferrer" className="text-accent-soft hover:underline">
+              view ↗
+            </a>
+          </span>
+        ) : (
+          <span className="text-amber-300">Deliverable not on IPFS — paste it below.</span>
         )}
       </div>
 
-      {/* Paste overrides — used when the brief/deliverable aren't retrievable IPFS files. */}
-      {!todoUrl && (
+      {!todoUrl && !requirements && (
         <textarea
           value={todoPaste}
           onChange={(e) => setTodoPaste(e.target.value)}

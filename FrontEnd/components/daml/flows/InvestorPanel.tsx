@@ -9,7 +9,7 @@ import { FileUpload } from "@/components/daml/FileUpload";
 import { Button } from "@/components/ui/button";
 import { damlConfig } from "@/lib/daml/config";
 import { ipfsUrl } from "@/lib/daml/storage";
-import { Vindex, num, hours, days, STATUS_LABEL } from "@/lib/daml/vindex";
+import { Vindex, num, hours, STATUS_LABEL } from "@/lib/daml/vindex";
 
 function Field({
   label,
@@ -51,6 +51,8 @@ export function InvestorPanel() {
   // Live ledger state (auto-updates on every change).
   const parties = useStreamQueries(Vindex.InvestorParty);
   const postings = useStreamQueries(Vindex.ProjectPosting);
+  const mandates = useStreamQueries(Vindex.PlanningMandate);
+  const plans = useStreamQueries(Vindex.WorkPlan);
   const projects = useStreamQueries(Vindex.Project);
   const reviews = useStreamQueries(Vindex.MilestoneReview);
   const vaults = useStreamQueries(Vindex.AssetVault);
@@ -61,42 +63,57 @@ export function InvestorPanel() {
   const postCmd = useCommand<unknown>();
   const voteCmd = useCommand<unknown>();
   const selectCmd = useCommand<unknown>();
+  const planCmd = useCommand<unknown>();
 
   const [agent, setAgent] = useState("");
   const [budget, setBudget] = useState("4000");
   const [agentFee, setAgentFee] = useState("300");
-  const [payment, setPayment] = useState("1000");
+  const [commitment, setCommitment] = useState("500");
   const [reasonsText, setReasonsText] = useState("Deliverable does not meet the milestone spec");
   const [requirements, setRequirements] = useState("Build the Verdix milestone deliverables");
   const [briefCid, setBriefCid] = useState("");
+  // New-project flow: each project is its own InvestorParty. `newPartyMode` forces the create form
+  // even when an old (settled) party exists; `preferredPartyCid` keeps the UI on the party just made.
+  const [newPartyMode, setNewPartyMode] = useState(false);
+  const [preferredPartyCid, setPreferredPartyCid] = useState<string | null>(null);
 
-  const myParty = parties.contracts.find((c) => c.payload.members.includes(party));
-
-  // Bug fix (spam): once a posting or project already exists for this party, block re-posting —
-  // each SetupAndPost mints a fresh pair of vaults, so repeated clicks pile up duplicates.
+  // Spam/concurrency guard: block re-posting while ANY stage of a job exists for this party —
+  // a live posting, a pending plan (mandate/work-plan), or an active project.
   const myPosting = postings.contracts.find((p) => p.payload.members.includes(party));
+  const myMandate = mandates.contracts.find((m) => m.payload.members.includes(party));
+  const myPlan = plans.contracts.find((p) => p.payload.members.includes(party));
   const myProject = projects.contracts.find((p) => p.payload.members.includes(party));
-  const hasJob = Boolean(myPosting || myProject);
+  const hasJob = Boolean(myPosting || myMandate || myPlan || myProject);
+
+  // An investor can run many projects, each a separate InvestorParty. Pick the party tied to the
+  // active job (via investorPartyCid); else the one just created; else the first.
+  const myParties = parties.contracts.filter((c) => c.payload.members.includes(party));
+  const activeJob = myPosting ?? myMandate ?? myPlan ?? myProject;
+  const myParty =
+    (activeJob && myParties.find((c) => c.contractId === activeJob.payload.investorPartyCid)) ||
+    (preferredPartyCid ? myParties.find((c) => c.contractId === preferredPartyCid) : undefined) ||
+    myParties[0];
 
   // Open posting: published to the registered worker pool (env-configured), NOT a hand-picked
   // worker. Anyone in the pool can apply; the investor selects later by governance vote.
   const workerPool = damlConfig.workerPool;
 
-  // Bug fix (validation): the milestone payment (plus its penalty buffer) cannot exceed the budget.
-  // Mirrors the on-ledger guard `budgetAmount >= Σ payment·(1+violationPct)` so the user sees it
-  // BEFORE submitting instead of getting a raw Daml interpretation error.
-  const VIOLATION_PCT = 0.1; // must match the milestone `violationPct` used in fundAndPost
-  const paymentNum = Number(payment);
+  // A worker is already chosen once a mandate / plan / project exists — selection is done, so the
+  // applicant list is no longer actionable (the posting is consumed at SelectWorker; the leftover
+  // Application contracts can't be archived from the investor side, so we just stop showing them).
+  const workerSelected = Boolean(myMandate || myPlan || myProject);
+  const openApplications = myPosting
+    ? applications.contracts.filter((a) => a.payload.postingCid === myPosting.contractId)
+    : [];
+
   const budgetNum = Number(budget);
-  const minBudget = paymentNum * (1 + VIOLATION_PCT);
-  const budgetValid =
-    Number.isFinite(paymentNum) && Number.isFinite(budgetNum) && paymentNum > 0 && budgetNum >= minBudget;
+  const budgetValid = Number.isFinite(budgetNum) && budgetNum > 0;
 
   const createParty = () =>
     createCmd
       .run(
-        () =>
-          session!.ledger.create(Vindex.InvestorParty, {
+        async () => {
+          const created = await session!.ledger.create(Vindex.InvestorParty, {
             admin: party,
             members: [party],
             pending: [],
@@ -117,7 +134,12 @@ export function InvestorPanel() {
               defaultReviewWindow: hours(24),
             },
             agent,
-          }),
+          });
+          // Follow the party we just created (so a fresh project uses it, not an old one).
+          setPreferredPartyCid(created.contractId);
+          setNewPartyMode(false);
+          return created;
+        },
         { refOf: (r) => (r as { contractId: string }).contractId },
       )
       .catch(() => undefined);
@@ -130,27 +152,35 @@ export function InvestorPanel() {
           session!.ledger.exercise(Vindex.InvestorParty.SetupAndPost, myParty.contractId, {
             requirements,
             briefUri: briefCid,
-            milestones: [
-              {
-                deliverablesHash: "sha256:deliverable-1",
-                payment: num(payment),
-                workerWindow: days(2),
-                reviewWindow: hours(24),
-                violationPct: num(0.1),
-                isFinal: true,
-              },
-            ],
             budgetAmount: num(budget),
             agentFeeAmount: num(agentFee),
             agentOpCost: num(50),
-            maxSubmissions: num(5),
-            commitmentRequired: num(500),
+            commitmentRequired: num(commitment),
             workerPool,
           }),
         { refOf: (r) => JSON.stringify((r as unknown[])[0]) },
       )
       .catch(() => undefined);
   };
+
+  // Approve / reject the worker's authored plan (the SOW). ApprovePlan mints the Project; RejectPlan
+  // sends the worker back to re-author. Both are single member actions (single-investor demo).
+  const approvePlan = (plan: (typeof plans.contracts)[number]) =>
+    planCmd
+      .run(() => session!.ledger.exercise(Vindex.WorkPlan.ApprovePlan, plan.contractId, { actor: party }))
+      .catch(() => undefined);
+
+  const rejectPlan = (plan: (typeof plans.contracts)[number]) =>
+    planCmd
+      .run(() => session!.ledger.exercise(Vindex.WorkPlan.RejectPlan, plan.contractId, { actor: party }))
+      .catch(() => undefined);
+
+  // Total a plan needs from the budget envelope: Σ payment·(1 + penalty%).
+  const planRequired = (p: (typeof plans.contracts)[number]) =>
+    p.payload.milestones.reduce(
+      (sum, m) => sum + Number(m.payment) * (1 + Number(m.violationPct)),
+      0,
+    );
 
   // Accept a submission in ONE atomic step: cast the ACCEPT ballot, then finalize using the
   // freshly-returned review cid. CastVote is CONSUMING — it archives & recreates the review — so
@@ -251,8 +281,11 @@ export function InvestorPanel() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {!myParty ? (
+      {!myParty || newPartyMode ? (
         <Card title="Create Investor Party">
+          <p className="text-[12px] text-text-secondary">
+            Each project is its own Investor Party (a fresh funding pool + governance group).
+          </p>
           <Field label="AI Agent party id" value={agent} onChange={setAgent} placeholder="Agent::1220…" />
           <div className="grid grid-cols-2 gap-2">
             <Field label="Budget funding" value={budget} onChange={setBudget} />
@@ -261,6 +294,11 @@ export function InvestorPanel() {
           <Button onClick={createParty} disabled={!agent || createCmd.phase === "submitting"}>
             Create Investor Party
           </Button>
+          {myParty && (
+            <Button variant="ghost" size="sm" onClick={() => setNewPartyMode(false)}>
+              Cancel
+            </Button>
+          )}
           <TxStatus status={createCmd} />
         </Card>
       ) : hasJob ? (
@@ -314,36 +352,44 @@ export function InvestorPanel() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Milestone payment" value={payment} onChange={setPayment} />
-            <Field label="Budget (≥ Σ pay·(1+p))" value={budget} onChange={setBudget} />
+            <Field label="Budget envelope (cap)" value={budget} onChange={setBudget} />
+            <Field label="Required worker stake" value={commitment} onChange={setCommitment} />
           </div>
+          <p className="text-[11px] text-text-secondary">
+            You fund the budget <span className="text-text-primary">envelope</span> and set the worker
+            stake. After you select a worker, they draft the milestone plan (count, payment split, max
+            submissions) for you to approve — it must fit within this envelope.
+          </p>
           {!budgetValid && (
-            <p className="text-[11px] text-amber-300">
-              {paymentNum > 0
-                ? `Budget must be ≥ ${minBudget} (milestone payment + ${Math.round(
-                    VIOLATION_PCT * 100,
-                  )}% penalty buffer). A milestone can't pay more than the project budget.`
-                : "Enter a milestone payment greater than 0."}
-            </p>
+            <p className="text-[11px] text-amber-300">Enter a budget envelope greater than 0.</p>
           )}
           <Button
             onClick={fundAndPost}
             disabled={postCmd.phase === "submitting" || !budgetValid || workerPool.length === 0}
           >
-            Fund Budget + Agent-Fee Vaults &amp; Post Job
+            Fund Vaults &amp; Post Open Job
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setNewPartyMode(true)}>
+            + Start a separate project (new Investor Party)
           </Button>
           <TxStatus status={postCmd} />
         </Card>
       )}
 
       <Card title="Applicants — Select Worker">
-        {applications.contracts.length === 0 ? (
+        {workerSelected ? (
           <p className="text-[12px] text-text-secondary">
-            No applicants yet. Publish a job, then have a Worker apply.
+            Worker selected — review their plan in <span className="text-text-primary">Worker Plans</span> below.
+          </p>
+        ) : !myPosting ? (
+          <p className="text-[12px] text-text-secondary">Publish a job first, then applicants appear here.</p>
+        ) : openApplications.length === 0 ? (
+          <p className="text-[12px] text-text-secondary">
+            No applicants yet. Have a Worker apply to your posting.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {applications.contracts.map((a) => (
+            {openApplications.map((a) => (
               <li
                 key={a.contractId}
                 className="flex items-center justify-between gap-3 rounded-lg border border-white/8 px-3 py-2 text-[13px]"
@@ -379,6 +425,63 @@ export function InvestorPanel() {
           </ul>
         )}
         <TxStatus status={selectCmd} />
+      </Card>
+
+      <Card title="Worker Plans — Approve">
+        {mandates.contracts.length === 0 && plans.contracts.length === 0 ? (
+          <p className="text-[12px] text-text-secondary">
+            No plans yet. After you select a worker, they draft a plan here for your approval.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {mandates.contracts.map((m) => (
+              <li key={m.contractId} className="rounded-lg border border-white/8 px-3 py-2 text-[12px] text-text-secondary">
+                Worker selected — waiting for{" "}
+                <span className="font-mono text-text-primary">{m.payload.worker}</span> to submit a plan…
+              </li>
+            ))}
+            {plans.contracts.map((pl) => {
+              const required = planRequired(pl);
+              return (
+                <li key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
+                  <p className="text-[12px] text-text-secondary">
+                    Plan from <span className="font-mono text-text-primary">{pl.payload.worker}</span>
+                  </p>
+                  <ul className="flex flex-col gap-1 text-[12px]">
+                    {pl.payload.milestones.map((m, i) => (
+                      <li key={i} className="flex justify-between">
+                        <span className="text-text-secondary">
+                          Milestone {i + 1}
+                          {m.isFinal ? " (final)" : ""}
+                        </span>
+                        <span className="font-mono text-text-primary">{m.payment}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-text-secondary">
+                    {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions}{" "}
+                    submissions · needs ≥{" "}
+                    <span className="text-text-primary">{required.toFixed(0)}</span> from the envelope
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => approvePlan(pl)} disabled={planCmd.phase === "submitting"}>
+                      Approve plan &amp; start project
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => rejectPlan(pl)}
+                      disabled={planCmd.phase === "submitting"}
+                    >
+                      Reject — ask to revise
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <TxStatus status={planCmd} />
       </Card>
 
       <Card title="Escrow Vaults (live)">

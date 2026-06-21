@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_FILE = path.resolve(__dirname, "../FrontEnd/.env.local");
-const PKG = "10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9";
+const PKG = "78307962a34e50d896432d9ae539640e68e0853fdc5665a6daf5af7fed31b530";
 const tpl = (e) => `${PKG}:Vindex:${e}`;
 
 function readEnv() {
@@ -76,8 +76,7 @@ async function main() {
     created.push({ p: INVESTOR, e: "InvestorParty", cid: ip.contractId });
     const post = await exercise(INVESTOR, "InvestorParty", ip.contractId, "SetupAndPost", {
       requirements: "VERIFY review flow", briefUri: "",
-      milestones: [{ deliverablesHash: "h", payment: "1000.0", workerWindow: rel(172800), reviewWindow: rel(86400), violationPct: "0.1", isFinal: true }],
-      budgetAmount: "4000.0", agentFeeAmount: "300.0", agentOpCost: "50.0", maxSubmissions: "5", commitmentRequired: "500.0", workerPool: [WORKER],
+      budgetAmount: "4000.0", agentFeeAmount: "300.0", agentOpCost: "50.0", commitmentRequired: "500.0", workerPool: [WORKER],
     });
     const postingCid = post.exerciseResult._1;
 
@@ -89,10 +88,14 @@ async function main() {
       purpose: "select", action: { tag: "SelectWinner", value: WORKER }, deadline: new Date(Date.now() + 7 * 864e5).toISOString(),
     });
     const voted = await exById(INVESTOR, "GovernanceProposal", prop.exerciseResult, "CastProposalVote", { voter: INVESTOR, vote: "ACCEPT" });
-    const projProp = await exercise(INVESTOR, "ProjectPosting", postingCid, "SelectWorker", { actor: INVESTOR, proposalCid: voted.exerciseResult, applicationCid: appCid });
+    const mandate = await exercise(INVESTOR, "ProjectPosting", postingCid, "SelectWorker", { actor: INVESTOR, proposalCid: voted.exerciseResult, applicationCid: appCid });
 
-    console.log("3. Worker accepts offer + submits milestone ...");
-    const proj0 = await exById(WORKER, "ProjectProposal", projProp.exerciseResult, "AcceptProposal", {});
+    console.log("3. Worker drafts plan; investor approves; worker submits milestone ...");
+    const plan = await exById(WORKER, "PlanningMandate", mandate.exerciseResult, "ProposePlan", {
+      milestones: [{ deliverablesHash: "h", payment: "1000.0", workerWindow: rel(172800), reviewWindow: rel(86400), violationPct: "0.1", isFinal: true }],
+      maxSubmissions: "5",
+    });
+    const proj0 = await exById(INVESTOR, "WorkPlan", plan.exerciseResult, "ApprovePlan", { actor: INVESTOR });
     const proj1 = await exById(WORKER, "Project", proj0.exerciseResult, "SubmitMilestone", { deliverableHash: "d", deliverableUri: "" });
     let projectCid = proj1.exerciseResult;
 

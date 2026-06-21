@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_FILE = path.resolve(__dirname, "../FrontEnd/.env.local");
 
 // vindex package id (from the generated bindings; bump after any contract change).
-const PKG = "10c1d1e07ee2fdec9f2b4a1af73c80e96bb340f193f8889fb7243f052be65bf9";
+const PKG = "78307962a34e50d896432d9ae539640e68e0853fdc5665a6daf5af7fed31b530";
 const tpl = (entity) => `${PKG}:Vindex:${entity}`;
 
 // ---- read config from .env.local --------------------------------------------
@@ -116,20 +116,9 @@ async function main() {
     const post = await exercise(INVESTOR, "InvestorParty", ip.contractId, "SetupAndPost", {
       requirements: "VERIFY: open-job visibility check",
       briefUri: "",
-      milestones: [
-        {
-          deliverablesHash: "sha256:verify",
-          payment: "1000.0",
-          workerWindow: rel(2 * 86400),
-          reviewWindow: rel(24 * 3600),
-          violationPct: "0.1",
-          isFinal: true,
-        },
-      ],
       budgetAmount: "4000.0",
       agentFeeAmount: "300.0",
       agentOpCost: "50.0",
-      maxSubmissions: "5",
       commitmentRequired: "500.0",
       workerPool: [WORKER],
     });

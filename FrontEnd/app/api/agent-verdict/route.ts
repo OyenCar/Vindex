@@ -53,6 +53,21 @@ async function resolveText(text: string | undefined, uri: string | null | undefi
   throw new Error(`missing ${label}: provide its text or an IPFS CID`);
 }
 
+// To-do list: prefer the richer brief FILE when it's a real, fetchable pin; otherwise fall back to
+// the on-ledger project-description text so the agent always has something to compare against (even
+// if the brief upload failed and landed as a local- stand-in).
+async function resolveTodo(text: string | undefined, uri: string | null | undefined): Promise<string> {
+  if (uri && uri.trim() && !uri.trim().startsWith("local-")) {
+    try {
+      return await fetchFromIpfs(uri.trim());
+    } catch {
+      /* brief unreachable — fall through to the on-ledger text */
+    }
+  }
+  if (text && text.trim()) return text.trim();
+  throw new Error("missing to-do list: no project description on-ledger and no brief pinned");
+}
+
 const SYSTEM_PROMPT = `You are Vindex's arbitration agent for a Canton/Daml freelance escrow protocol.
 A worker delivered a milestone; the investor REJECTED it with stated reasons. Your job is to decide,
 strictly and impartially, whether that rejection is JUSTIFIED by checking the SUBMISSION against the
@@ -105,7 +120,7 @@ export async function POST(req: NextRequest) {
   let todo: string;
   let submission: string;
   try {
-    todo = await resolveText(body.todoText, body.todoUri, "to-do list");
+    todo = await resolveTodo(body.todoText, body.todoUri);
     submission = await resolveText(body.submissionText, body.submissionUri, "submission");
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });

@@ -49,19 +49,19 @@ setupSingle milestones budgetAmount agentFeeAmount agentOpCost commitmentRequire
   (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
           requirements = "build it"
           briefUri = ""
-          milestones = milestones
           budgetAmount = budgetAmount
           agentFeeAmount = agentFeeAmount
           agentOpCost = agentOpCost
-          maxSubmissions = 5
           commitmentRequired = commitmentRequired
           workerPool = [worker])
   app <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p", presentationUri = "", contactLink = "l")
   now <- getTime
   prop <- submit i1 $ exerciseCmd ip (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
   prop1 <- submit i1 $ exerciseCmd prop (CastProposalVote with voter = i1, vote = ACCEPT)
-  projProp <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = prop1, applicationCid = app)
-  proj <- submit worker $ exerciseCmd projProp AcceptProposal
+  mandate <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = prop1, applicationCid = app)
+  -- Worker authors the milestone plan (SOW); investor approves it -> Project.
+  plan <- submit worker $ exerciseCmd mandate (ProposePlan with milestones = milestones, maxSubmissions = 5)
+  proj <- submit i1 $ exerciseCmd plan (ApprovePlan with actor = i1)
   pure (Ctx with i1, worker, agent, ip, proj)
 
 oneMilestone : Bool -> Decimal -> Decimal -> RelTime -> MilestoneSpec
@@ -106,11 +106,11 @@ testHappyPathMulti = do
   ip3 <- submit i3 $ exerciseCmd inv3 AcceptInvite
   let m1 = oneMilestone False 1000.0 0.1 (hours 48)
       m2 = oneMilestone True  2000.0 0.1 (hours 48)
-  -- budget required = 1000*1.1 + 2000*1.1 = 3300; fund 3600 (overfunded).
+  -- budget envelope 3600; the worker's plan requires 1000*1.1 + 2000*1.1 = 3300 (fits).
   (posting, _, _) <- submit i1 $ exerciseCmd ip3 (SetupAndPost with
-          requirements = "Build X", briefUri = "", milestones = [m1, m2]
+          requirements = "Build X", briefUri = ""
           budgetAmount = 3600.0, agentFeeAmount = 300.0, agentOpCost = 50.0
-          maxSubmissions = 3, commitmentRequired = 500.0, workerPool = [worker, other])
+          commitmentRequired = 500.0, workerPool = [worker, other])
   -- Two private applications; applicants cannot see each other's.
   appW <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "pW", presentationUri = "", contactLink = "lW")
   _appO <- submit other $ exerciseCmd posting (Apply with applicant = other, presentationHash = "pO", presentationUri = "", contactLink = "lO")
@@ -119,8 +119,10 @@ testHappyPathMulti = do
   sp <- submit i1 $ exerciseCmd ip3 (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
   sp1 <- submit i1 $ exerciseCmd sp (CastProposalVote with voter = i1, vote = ACCEPT)
   sp2 <- submit i2 $ exerciseCmd sp1 (CastProposalVote with voter = i2, vote = ACCEPT)
-  projProp <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = sp2, applicationCid = appW)
-  proj0 <- submit worker $ exerciseCmd projProp AcceptProposal
+  mandate <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = sp2, applicationCid = appW)
+  -- Worker authors the plan; investor approves it -> Project.
+  plan <- submit worker $ exerciseCmd mandate (ProposePlan with milestones = [m1, m2], maxSubmissions = 3)
+  proj0 <- submit i1 $ exerciseCmd plan (ApprovePlan with actor = i1)
   -- Milestone 1: submit + ACCEPT vote (2/3) -> release + advance.
   proj1 <- submit worker $ exerciseCmd proj0 (SubmitMilestone with deliverableHash = "d1", deliverableUri = "")
   r1 <- nextReview i1
@@ -145,6 +147,7 @@ testHappyPathMulti = do
 testOverfundRejected : Script ()
 testOverfundRejected = do
   i1 <- allocateParty "Investor1"
+  worker <- allocateParty "Worker"
   agent <- allocateParty "Agent"
   let cfg = GovernanceConfig with
         maxInvestors = 3, votingModel = SimpleMajority, thresholdFraction = 0.5
@@ -153,12 +156,19 @@ testOverfundRejected = do
           admin = i1, members = [i1], pending = []
           contributions = [Contribution with investor = i1, projectFunding = 1000.0, agentFeeFunding = 50.0, weight = 1.0]
           config = cfg, agent = agent)
-  let m1 = oneMilestone True 1000.0 0.1 (hours 1)   -- requires 1100
-  -- budget 1000 < required 1100 -> must fail.
-  submitMustFail i1 $ exerciseCmd ip (SetupAndPost with
-          requirements = "x", briefUri = "", milestones = [m1]
+  -- Budget envelope 1000 is funded fine; the overfund check is at plan approval.
+  (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          requirements = "x", briefUri = ""
           budgetAmount = 1000.0, agentFeeAmount = 50.0, agentOpCost = 10.0
-          maxSubmissions = 1, commitmentRequired = 100.0, workerPool = [])
+          commitmentRequired = 100.0, workerPool = [worker])
+  app <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p", presentationUri = "", contactLink = "l")
+  now <- getTime
+  prop <- submit i1 $ exerciseCmd ip (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
+  prop1 <- submit i1 $ exerciseCmd prop (CastProposalVote with voter = i1, vote = ACCEPT)
+  mandate <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = prop1, applicationCid = app)
+  -- Worker proposes a plan requiring 1100 (1000*1.1) > 1000 envelope -> approval must fail.
+  plan <- submit worker $ exerciseCmd mandate (ProposePlan with milestones = [oneMilestone True 1000.0 0.1 (hours 1)], maxSubmissions = 1)
+  submitMustFail i1 $ exerciseCmd plan (ApprovePlan with actor = i1)
   pure ()
 
 -- ---------------------------------------------------------------------------

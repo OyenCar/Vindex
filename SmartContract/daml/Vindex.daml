@@ -253,29 +253,29 @@ template InvestorParty
           deadline
 
     -- Fund the vaults and publish the posting in one go.
-    -- OVERFUND CHECK (locked decision 7) is enforced here.
     -- OPEN POSTING: the job is NOT pinned to one hand-picked worker. `workerPool` is the
     -- marketplace audience — the registered worker parties who can SEE the posting and apply
     -- to it (Canton has no public/global read, so an explicit observer set is required). The
     -- investor does not choose a winner here; selection happens later by governance vote over
     -- whoever applied.
+    -- PLANNING SPLIT: the investor sets only the BUDGET ENVELOPE (a cap) and the required worker
+    -- stake. The detailed plan — how many milestones, the payment split, and the max submissions —
+    -- is authored by the WORKER after selection and then approved by the investor (see
+    -- PlanningMandate -> WorkPlan -> ApprovePlan). The overfund check (locked decision 7) is
+    -- therefore enforced at ApprovePlan, where the milestones finally exist.
     nonconsuming choice SetupAndPost
         : (ContractId ProjectPosting, ContractId AssetVault, ContractId AssetVault)
       with
         requirements : Text
         briefUri : Text            -- ^ IPFS CID of the off-ledger project brief/files ("" if none)
-        milestones : [MilestoneSpec]
-        budgetAmount : Decimal
+        budgetAmount : Decimal     -- ^ budget ENVELOPE (cap); the approved plan must fit within it
         agentFeeAmount : Decimal
         agentOpCost : Decimal
-        maxSubmissions : Int
-        commitmentRequired : Decimal
+        commitmentRequired : Decimal  -- ^ worker stake the investor requires
         workerPool : [Party]       -- ^ registered workers who can see & apply (the open audience)
       controller admin
       do
-        assertMsg "milestones must be non-empty" (not (null milestones))
-        -- LOCKED DECISION 7: total budget >= Σ(payment × (1 + p%))
-        assertMsg "Budget Vault underfunded" (budgetAmount >= requiredBudget milestones)
+        assertMsg "budget envelope must be positive" (budgetAmount > 0.0)
         let stake = members ++ (agent :: workerPool)
         -- MONEY MOVEMENT: create the Budget Vault (funder side = Investor Party members).
         budget <- create AssetVault with
@@ -297,11 +297,9 @@ template InvestorParty
           agent
           requirements
           briefUri
-          milestones
           budgetVault = budget
           agentFeeVault = agentFee
           agentOpCost
-          maxSubmissions
           commitmentRequired
           workerPool
         pure (posting, budget, agentFee)
@@ -367,11 +365,9 @@ template ProjectPosting
     agent : Party
     requirements : Text
     briefUri : Text
-    milestones : [MilestoneSpec]
     budgetVault : ContractId AssetVault
     agentFeeVault : ContractId AssetVault
     agentOpCost : Decimal
-    maxSubmissions : Int
     commitmentRequired : Decimal
     workerPool : [Party]          -- ^ registered workers who can see & apply (the open audience)
   where
@@ -398,8 +394,10 @@ template ProjectPosting
           contactLink
           postingCid = self
 
-    -- GOVERNANCE-GATED (locked decision 2/4): worker selection is a discretionary vote.
-    choice SelectWorker : ContractId ProjectProposal
+    -- GOVERNANCE-GATED (locked decision 2/4): worker selection is a discretionary vote. Instead of
+    -- a finished contract, this opens a PLANNING MANDATE: the selected worker authors the milestone
+    -- plan (SOW), which the investor then approves (see PlanningMandate / WorkPlan).
+    choice SelectWorker : ContractId PlanningMandate
       with
         actor : Party
         proposalCid : ContractId GovernanceProposal
@@ -416,19 +414,18 @@ template ProjectPosting
           _ -> abort "proposal action is not SelectWinner"
         assertMsg "winner does not match application applicant" (chosen == app.applicant)
         archive proposalCid
-        create ProjectProposal with
+        create PlanningMandate with
           investorPartyCid
           members
           contributions
           config
           worker = chosen
           agent
-          milestones
+          requirements
           briefUri
           budgetVault
           agentFeeVault
           agentOpCost
-          maxSubmissions
           commitmentRequired
 
 -- ---------------------------------------------------------------------------
@@ -501,10 +498,15 @@ template MilestoneReview
         create this with rejectionReasons = Some reasons
 
 -- ---------------------------------------------------------------------------
--- Contract formation: propose-accept (worker locks the Commitment Vault)
+-- Contract formation: worker authors the plan (SOW), investor approves
 -- ---------------------------------------------------------------------------
 
-template ProjectProposal
+-- | After selection, the worker is mandated to author the milestone plan. Signed by members
+--   (authority carried from the posting); the worker is an observer until they propose. Because
+--   ProposePlan runs with members' authority (mandate signatory) PLUS the worker's (controller),
+--   the resulting WorkPlan is co-signed — so the investor's approval ALONE can mint the Project
+--   and lock the worker's Commitment Vault without re-collecting signatures (locked decision 8).
+template PlanningMandate
   with
     investorPartyCid : ContractId InvestorParty
     members : [Party]
@@ -512,27 +514,91 @@ template ProjectProposal
     config : GovernanceConfig
     worker : Party
     agent : Party
-    milestones : [MilestoneSpec]
+    requirements : Text            -- ^ the investor's project description / to-do (always on-ledger)
     briefUri : Text
     budgetVault : ContractId AssetVault
     agentFeeVault : ContractId AssetVault
     agentOpCost : Decimal
-    maxSubmissions : Int
     commitmentRequired : Decimal
   where
     signatory members
     observer worker, agent
 
-    -- Worker accepts => creates the main `Project` (sigs = members + worker). NO DEADLOCK:
-    -- the proposal already carries members' authority; the worker adds theirs by accepting.
-    choice AcceptProposal : ContractId Project
+    -- Worker authors the plan: the milestones (count + payment split + windows) and the max
+    -- submissions. This is the SOW the investor will approve.
+    choice ProposePlan : ContractId WorkPlan
+      with
+        milestones : [MilestoneSpec]
+        maxSubmissions : Int
       controller worker
       do
+        assertMsg "plan must have at least one milestone" (not (null milestones))
+        assertMsg "max submissions must be positive" (maxSubmissions > 0)
+        create WorkPlan with
+          investorPartyCid
+          members
+          contributions
+          config
+          worker
+          agent
+          requirements
+          briefUri
+          milestones
+          maxSubmissions
+          budgetVault
+          agentFeeVault
+          agentOpCost
+          commitmentRequired
+
+    -- Investor backs out before any plan is agreed; refund the reserved vaults to the members.
+    choice CancelMandate : ()
+      controller members
+      do
+        _ <- exercise budgetVault Settle
+        _ <- exercise agentFeeVault Settle
+        pure ()
+
+-- | The worker's authored plan (the SOW). Co-signed by members + worker. The investor reviews it
+--   and either approves (mints the Project + locks the Commitment Vault, validating the envelope)
+--   or rejects (the worker may author a new plan). NOTE: plan approval is a direct member action
+--   here (single-investor demo); in a multi-investor deployment it would be governance-gated like
+--   SelectWorker.
+template WorkPlan
+  with
+    investorPartyCid : ContractId InvestorParty
+    members : [Party]
+    contributions : [Contribution]
+    config : GovernanceConfig
+    worker : Party
+    agent : Party
+    requirements : Text
+    briefUri : Text
+    milestones : [MilestoneSpec]
+    maxSubmissions : Int
+    budgetVault : ContractId AssetVault
+    agentFeeVault : ContractId AssetVault
+    agentOpCost : Decimal
+    commitmentRequired : Decimal
+  where
+    signatory members, worker
+    observer agent
+
+    -- Investor approves => mints the Project (sigs = members + worker; both authorities are carried
+    -- by this co-signed plan). LOCKED DECISION 7: the funded budget envelope must cover
+    -- Σ(payment × (1 + p%)).
+    choice ApprovePlan : ContractId Project
+      with actor : Party
+      controller actor
+      do
+        assertMsg "actor must be a member" (actor `elem` members)
+        assertMsg "plan must have at least one milestone" (not (null milestones))
+        bv <- fetch budgetVault
+        assertMsg "Budget envelope does not cover the plan" (bv.amount >= requiredBudget milestones)
         now <- getTime
         first <- case getAt 0 milestones of
           Some m -> pure m
           None -> abort "no milestones"
-        -- MONEY MOVEMENT: worker locks the Commitment Vault (funder side = Worker).
+        -- MONEY MOVEMENT: lock the worker's Commitment Vault (funder = Worker; authority carried).
         commitment <- create AssetVault with
           vaultType = CommitmentV
           funders = [worker]
@@ -546,6 +612,7 @@ template ProjectProposal
           worker
           agent
           milestones
+          requirements
           briefUri
           currentIndex = 0
           status = Active
@@ -561,9 +628,43 @@ template ProjectProposal
           currentSubmissionUri = None
           rejectionReasons = None
 
-    choice RejectProposal : ()
+    -- Investor rejects the plan => the worker may author a new one.
+    choice RejectPlan : ContractId PlanningMandate
+      with actor : Party
+      controller actor
+      do
+        assertMsg "actor must be a member" (actor `elem` members)
+        create PlanningMandate with
+          investorPartyCid
+          members
+          contributions
+          config
+          worker
+          agent
+          requirements
+          briefUri
+          budgetVault
+          agentFeeVault
+          agentOpCost
+          commitmentRequired
+
+    -- Worker withdraws their plan (to revise before the investor rules).
+    choice WithdrawPlan : ContractId PlanningMandate
       controller worker
-      do pure ()
+      do
+        create PlanningMandate with
+          investorPartyCid
+          members
+          contributions
+          config
+          worker
+          agent
+          requirements
+          briefUri
+          budgetVault
+          agentFeeVault
+          agentOpCost
+          commitmentRequired
 
 -- | On completion or stop, an immutable settlement record (lets tests assert the money
 --   invariant after the `Project` is gone).
@@ -594,6 +695,7 @@ template Project
     worker : Party
     agent : Party
     milestones : [MilestoneSpec]
+    requirements : Text                     -- ^ investor's project description / to-do (on-ledger text)
     briefUri : Text                         -- ^ IPFS CID of the project brief (carried from posting)
     currentIndex : Int
     status : MStatus

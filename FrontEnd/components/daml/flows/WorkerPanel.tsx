@@ -6,9 +6,10 @@ import { useStreamQueries } from "@/lib/daml/useStreamQueries";
 import { useCommand } from "@/lib/daml/useCommand";
 import { TxStatus } from "@/components/daml/TxStatus";
 import { FileUpload } from "@/components/daml/FileUpload";
+import { StatusBadge } from "@/components/daml/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ipfsUrl } from "@/lib/daml/storage";
-import { Vindex, STATUS_LABEL } from "@/lib/daml/vindex";
+import { Vindex, num, hours, days } from "@/lib/daml/vindex";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -19,22 +20,61 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[11px] text-text-secondary">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50"
+      />
+    </label>
+  );
+}
+
+const PENALTY = 0.1; // penalty buffer baked into each proposed milestone
+
 export function WorkerPanel() {
   const { session } = useDaml();
   const party = session!.party;
 
   const postings = useStreamQueries(Vindex.ProjectPosting);
-  const proposals = useStreamQueries(Vindex.ProjectProposal);
+  const mandates = useStreamQueries(Vindex.PlanningMandate);
+  const plans = useStreamQueries(Vindex.WorkPlan);
   const projects = useStreamQueries(Vindex.Project);
   const vaults = useStreamQueries(Vindex.AssetVault);
   const settlements = useStreamQueries(Vindex.Settlement);
 
   const applyCmd = useCommand<unknown>();
-  const acceptCmd = useCommand<unknown>();
+  const planCmd = useCommand<unknown>();
   const submitCmd = useCommand<unknown>();
 
   const [presentationCid, setPresentationCid] = useState("");
   const [deliverableCid, setDeliverableCid] = useState("");
+  const [paymentsText, setPaymentsText] = useState("1000, 2000");
+  const [maxSubText, setMaxSubText] = useState("3");
+
+  const myMandates = mandates.contracts.filter((m) => m.payload.worker === party);
+  const myPlans = plans.contracts.filter((p) => p.payload.worker === party);
+  const myProjects = projects.contracts.filter((p) => p.payload.worker === party);
+
+  // Parse the comma/line-separated payments the worker enters into milestone payments.
+  const payments = paymentsText
+    .split(/[,\n]/)
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const required = payments.reduce((sum, p) => sum + p * (1 + PENALTY), 0);
+  const envelopeOf = (cid: string) =>
+    vaults.contracts.find((v) => v.contractId === cid)?.payload.amount;
 
   const apply = (postingCid: (typeof postings.contracts)[number]["contractId"]) =>
     applyCmd
@@ -48,12 +88,30 @@ export function WorkerPanel() {
       )
       .catch(() => undefined);
 
-  const accept = (proposalCid: (typeof proposals.contracts)[number]["contractId"]) =>
-    acceptCmd
-      .run(
-        () => session!.ledger.exercise(Vindex.ProjectProposal.AcceptProposal, proposalCid, {}),
-        { refOf: (r) => JSON.stringify((r as unknown[])[0]) },
-      )
+  // Worker authors the plan (SOW): one milestone per payment entered, last one final.
+  const proposePlan = (mandate: (typeof mandates.contracts)[number]) =>
+    planCmd
+      .run(() => {
+        if (payments.length === 0) throw new Error("Enter at least one milestone payment");
+        const maxSubmissions = Math.max(1, Math.floor(Number(maxSubText) || 1));
+        const milestones = payments.map((pay, i) => ({
+          deliverablesHash: `sha256:milestone-${i + 1}`,
+          payment: num(pay),
+          workerWindow: days(2),
+          reviewWindow: hours(24),
+          violationPct: num(PENALTY),
+          isFinal: i === payments.length - 1,
+        }));
+        return session!.ledger.exercise(Vindex.PlanningMandate.ProposePlan, mandate.contractId, {
+          milestones,
+          maxSubmissions: num(maxSubmissions),
+        });
+      })
+      .catch(() => undefined);
+
+  const withdrawPlan = (plan: (typeof plans.contracts)[number]) =>
+    planCmd
+      .run(() => session!.ledger.exercise(Vindex.WorkPlan.WithdrawPlan, plan.contractId, {}))
       .catch(() => undefined);
 
   const submit = (projectCid: (typeof projects.contracts)[number]["contractId"]) =>
@@ -67,6 +125,12 @@ export function WorkerPanel() {
       .catch(() => undefined);
 
   const commitment = vaults.contracts.find((v) => v.payload.vaultType === "CommitmentV");
+
+  // Milestone payments already released to the worker across active (not-yet-settled) projects.
+  const releasedSoFar = myProjects.reduce((sum, p) => {
+    const idx = Number(p.payload.currentIndex);
+    return sum + p.payload.milestones.slice(0, idx).reduce((s, m) => s + Number(m.payment), 0);
+  }, 0);
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -99,40 +163,104 @@ export function WorkerPanel() {
         <TxStatus status={applyCmd} />
       </Card>
 
-      <Card title="Job Offers">
-        {proposals.contracts.length === 0 ? (
-          <p className="text-[12px] text-text-secondary">No contract offers yet.</p>
+      <Card title="Plan Your Project">
+        {myMandates.length === 0 && myPlans.length === 0 ? (
+          <p className="text-[12px] text-text-secondary">
+            No planning invitations yet. Apply to a posting and get selected first.
+          </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {proposals.contracts.map((p) => (
-              <li key={p.contractId} className="rounded-lg border border-white/8 p-3">
-                <p className="mb-2 text-[12px] text-text-secondary">
-                  Commitment fee required: <span className="font-mono text-text-primary">{p.payload.commitmentRequired}</span>
+          <div className="flex flex-col gap-3">
+            {myPlans.map((pl) => (
+              <div key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-success/25 bg-success/5 p-3">
+                <p className="text-[12px] text-text-primary">Plan submitted — awaiting investor approval</p>
+                <p className="text-[11px] text-text-secondary">
+                  {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions
                 </p>
-                <Button size="sm" onClick={() => accept(p.contractId)} disabled={acceptCmd.phase === "submitting"}>
-                  Accept &amp; deposit commitment
+                <Button size="sm" variant="secondary" onClick={() => withdrawPlan(pl)} disabled={planCmd.phase === "submitting"}>
+                  Withdraw &amp; revise
                 </Button>
-              </li>
+              </div>
             ))}
-          </ul>
+            {myMandates.map((m) => {
+              const envelope = envelopeOf(m.payload.budgetVault);
+              const fits = envelope == null || required <= Number(envelope);
+              return (
+                <div key={m.contractId} className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
+                  <p className="text-[12px] text-text-primary">Draft your plan (SOW)</p>
+                  <p className="text-[11px] text-text-secondary">
+                    {envelope != null && (
+                      <>
+                        Budget envelope: <span className="font-mono text-text-primary">{envelope}</span> ·{" "}
+                      </>
+                    )}
+                    required stake: <span className="font-mono text-text-primary">{m.payload.commitmentRequired}</span>
+                  </p>
+                  <Field label="Milestone payments (comma-separated → one milestone each)" value={paymentsText} onChange={setPaymentsText} />
+                  <Field label="Max submissions per milestone" value={maxSubText} onChange={setMaxSubText} />
+                  <p className="text-[11px] text-text-secondary">
+                    {payments.length} milestone(s) · needs ≥{" "}
+                    <span className="text-text-primary">{required.toFixed(0)}</span> (payments + {Math.round(PENALTY * 100)}% penalty buffer)
+                  </p>
+                  {!fits && (
+                    <p className="text-[11px] text-amber-300">
+                      Plan exceeds the budget envelope — lower the payments.
+                    </p>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => proposePlan(m)}
+                    disabled={planCmd.phase === "submitting" || payments.length === 0 || !fits}
+                  >
+                    Submit plan for approval
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
         )}
-        <TxStatus status={acceptCmd} />
+        <TxStatus status={planCmd} />
       </Card>
 
-      <Card title="Active Milestones">
-        {projects.contracts.length === 0 ? (
+      <Card title="Your Work">
+        {myProjects.length === 0 ? (
           <p className="text-[12px] text-text-secondary">No active project.</p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {projects.contracts.map((p) => {
+            {myProjects.map((p) => {
               const submittable = p.payload.status === "Active" || p.payload.status === "Revision";
+              const idx = Number(p.payload.currentIndex);
+              // Milestones already accepted (index < currentIndex) have been paid from escrow.
+              const earned = p.payload.milestones
+                .slice(0, idx)
+                .reduce((s, m) => s + Number(m.payment), 0);
               return (
                 <li key={p.contractId} className="rounded-lg border border-white/8 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-[12px] text-text-secondary">
+                      Milestone {idx + 1}/{p.payload.milestones.length}
+                    </span>
+                    <StatusBadge status={p.payload.status} />
+                  </div>
+                  <ul className="mb-2 flex flex-col gap-1">
+                    {p.payload.milestones.map((m, i) => {
+                      const paid = i < idx;
+                      const current = i === idx;
+                      return (
+                        <li key={i} className="flex items-center justify-between text-[12px]">
+                          <span className={paid ? "text-success" : current ? "text-accent-soft" : "text-text-secondary"}>
+                            {paid ? "✓ paid" : current ? "▶ current" : "• upcoming"} · Milestone {i + 1}
+                            {m.isFinal ? " (final)" : ""}
+                          </span>
+                          <span className="font-mono text-text-primary">{m.payment}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
                   <p className="mb-2 text-[12px] text-text-secondary">
-                    Milestone {Number(p.payload.currentIndex) + 1}/{p.payload.milestones.length} ·{" "}
-                    {STATUS_LABEL[p.payload.status] ?? p.payload.status}
+                    Earned so far:{" "}
+                    <span className="font-mono text-success">{earned}</span>
                   </p>
-                  {submittable && (
+                  {submittable ? (
                     <div className="flex flex-col gap-2">
                       <FileUpload label="Deliverable file (→ IPFS)" cid={deliverableCid} onUploaded={setDeliverableCid} />
                       <Button
@@ -143,7 +271,13 @@ export function WorkerPanel() {
                         Submit milestone
                       </Button>
                     </div>
-                  )}
+                  ) : p.payload.status === "Submitted" ? (
+                    <p className="text-[12px] text-text-secondary">Submitted — awaiting investor review.</p>
+                  ) : p.payload.status === "RejPending" ? (
+                    <p className="text-[12px] text-text-secondary">Disputed — under AI arbitration.</p>
+                  ) : p.payload.status === "Failed" ? (
+                    <p className="text-[12px] text-text-secondary">Deadline missed — awaiting the investor's decision.</p>
+                  ) : null}
                 </li>
               );
             })}
@@ -152,19 +286,30 @@ export function WorkerPanel() {
         <TxStatus status={submitCmd} />
       </Card>
 
-      <Card title="Payments & Escrow">
+      <Card title="Earnings & Completed">
+        <div className="flex items-center justify-between text-[12px]">
+          <span className="text-text-secondary">Milestone payments released so far</span>
+          <span className="font-mono text-success">{releasedSoFar}</span>
+        </div>
         <p className="text-[12px] text-text-secondary">
           Commitment locked:{" "}
           <span className="font-mono text-text-primary">{commitment?.payload.amount ?? "—"}</span>
         </p>
-        <ul className="flex flex-col gap-2 text-[13px]">
-          {settlements.contracts.map((s) => (
-            <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
-              <span className="text-text-secondary">{s.payload.reason}</span>
-              <span className="font-mono text-success">paid out {s.payload.totalPaidOut}</span>
-            </li>
-          ))}
-        </ul>
+        {settlements.contracts.length === 0 ? (
+          <p className="text-[12px] text-text-secondary">
+            No fully-settled projects yet — milestone payments above are released as each milestone is
+            accepted; the final settlement appears here on completion.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2 text-[13px]">
+            {settlements.contracts.map((s) => (
+              <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
+                <span className="text-text-secondary">✅ {s.payload.reason}</span>
+                <span className="font-mono text-success">paid out {s.payload.totalPaidOut}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

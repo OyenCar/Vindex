@@ -35,34 +35,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ cid: localCid, gateway: null, local: true });
   }
 
-  try {
-    const out = new FormData();
-    out.append("file", new Blob([buf]), file.name || "upload.bin");
-    const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${jwt}` },
-      body: out,
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { IpfsHash?: string };
-      if (data.IpfsHash) {
-        return NextResponse.json({ cid: data.IpfsHash, gateway: `${gatewayBase}/ipfs/${data.IpfsHash}` });
+  // Retry transient failures (Node "fetch failed" network blips, timeouts, 5xx, 429) before
+  // falling back to a local stand-in — those are intermittent and otherwise leave the brief /
+  // deliverable as a non-retrievable local- CID that the AI agent can't read.
+  const MAX_ATTEMPTS = 4;
+  let lastWarning = "Pinata upload failed; stored locally.";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const out = new FormData();
+      out.append("file", new Blob([buf]), file.name || "upload.bin");
+      const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${jwt}` },
+        body: out,
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { IpfsHash?: string };
+        if (data.IpfsHash) {
+          return NextResponse.json({ cid: data.IpfsHash, gateway: `${gatewayBase}/ipfs/${data.IpfsHash}` });
+        }
+        lastWarning = "Pinata response missing IpfsHash; stored locally.";
+      } else if (res.status === 401 || res.status === 403) {
+        // Auth/scope error — retrying won't help; stop now.
+        return NextResponse.json({
+          cid: localCid,
+          gateway: null,
+          local: true,
+          warning: "Pinata key is missing the pinFileToIPFS scope — regenerate it with pinning enabled.",
+        });
+      } else {
+        const detail = (await res.text().catch(() => "")).slice(0, 160);
+        lastWarning = `Pinata upload failed (${res.status})${detail ? `: ${detail}` : ""}; stored locally.`;
       }
+    } catch (e) {
+      lastWarning = `Could not reach Pinata (${e instanceof Error ? e.message : e}); stored locally.`;
     }
-    // Pinata rejected the request (e.g. 403 NO_SCOPES_FOUND for a key without pinning scope).
-    // Degrade gracefully so the demo keeps working; surface a non-fatal warning.
-    const detail = (await res.text().catch(() => "")).slice(0, 180);
-    const hint =
-      res.status === 401 || res.status === 403
-        ? "Pinata key is missing the pinFileToIPFS scope — regenerate it with pinning enabled."
-        : `Pinata upload failed (${res.status})${detail ? `: ${detail}` : ""}`;
-    return NextResponse.json({ cid: localCid, gateway: null, local: true, warning: hint });
-  } catch (e) {
-    return NextResponse.json({
-      cid: localCid,
-      gateway: null,
-      local: true,
-      warning: `Could not reach Pinata (${e instanceof Error ? e.message : e}); stored locally.`,
-    });
+    if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 500 * attempt));
   }
+  return NextResponse.json({ cid: localCid, gateway: null, local: true, warning: lastWarning });
 }
