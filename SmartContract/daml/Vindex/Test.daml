@@ -32,6 +32,7 @@ setupSingle milestones budgetAmount agentFeeAmount agentOpCost commitmentRequire
   i1 <- allocateParty "Investor1"
   worker <- allocateParty "Worker"
   agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
   let cfg = GovernanceConfig with
         maxInvestors = 3
         votingModel = SimpleMajority
@@ -47,13 +48,16 @@ setupSingle milestones budgetAmount agentFeeAmount agentOpCost commitmentRequire
           config = cfg
           agent = agent)
   (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          postingId = "job-single"
           requirements = "build it"
           briefUri = ""
           budgetAmount = budgetAmount
           agentFeeAmount = agentFeeAmount
           agentOpCost = agentOpCost
           commitmentRequired = commitmentRequired
-          workerPool = [worker])
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker]
+          publicParty = publicParty)
   app <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p", presentationUri = "", contactLink = "l")
   now <- getTime
   prop <- submit i1 $ exerciseCmd ip (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
@@ -88,8 +92,9 @@ testHappyPathMulti = do
   i2 <- allocateParty "Investor2"
   i3 <- allocateParty "Investor3"
   worker <- allocateParty "Worker"
-  other <- allocateParty "Worker2"
+  other <- allocateParty "Worker"
   agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
   let cfg = GovernanceConfig with
         maxInvestors = 5
         votingModel = SimpleMajority
@@ -108,9 +113,12 @@ testHappyPathMulti = do
       m2 = oneMilestone True  2000.0 0.1 (hours 48)
   -- budget envelope 3600; the worker's plan requires 1000*1.1 + 2000*1.1 = 3300 (fits).
   (posting, _, _) <- submit i1 $ exerciseCmd ip3 (SetupAndPost with
-          requirements = "Build X", briefUri = ""
+          postingId = "job-multi", requirements = "Build X", briefUri = ""
           budgetAmount = 3600.0, agentFeeAmount = 300.0, agentOpCost = 50.0
-          commitmentRequired = 500.0, workerPool = [worker, other])
+          commitmentRequired = 500.0
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker, partyToText other]
+          publicParty = publicParty)
   -- Two private applications; applicants cannot see each other's.
   appW <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "pW", presentationUri = "", contactLink = "lW")
   _appO <- submit other $ exerciseCmd posting (Apply with applicant = other, presentationHash = "pO", presentationUri = "", contactLink = "lO")
@@ -149,6 +157,7 @@ testOverfundRejected = do
   i1 <- allocateParty "Investor1"
   worker <- allocateParty "Worker"
   agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
   let cfg = GovernanceConfig with
         maxInvestors = 3, votingModel = SimpleMajority, thresholdFraction = 0.5
         weighted = False, quorumFraction = 0.5, defaultReviewWindow = hours 24
@@ -158,9 +167,12 @@ testOverfundRejected = do
           config = cfg, agent = agent)
   -- Budget envelope 1000 is funded fine; the overfund check is at plan approval.
   (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
-          requirements = "x", briefUri = ""
+          postingId = "job-overfund", requirements = "x", briefUri = ""
           budgetAmount = 1000.0, agentFeeAmount = 50.0, agentOpCost = 10.0
-          commitmentRequired = 100.0, workerPool = [worker])
+          commitmentRequired = 100.0
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker]
+          publicParty = publicParty)
   app <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p", presentationUri = "", contactLink = "l")
   now <- getTime
   prop <- submit i1 $ exerciseCmd ip (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
@@ -286,6 +298,242 @@ testAgentFreezeThenTopUp = do
   proj2 <- submit ctx.i1 $ exerciseCmd proj1 (TopUpAgentFee with actor = ctx.i1, proposalCid = tp1)
   -- Now the escalation to the Agent succeeds -> RejPending.
   Some _ <- submit ctx.i1 $ exerciseCmd proj2 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 8. Edit and Take Down Posting (single investor)
+-- ---------------------------------------------------------------------------
+
+testEditAndTakeDownPosting : Script ()
+testEditAndTakeDownPosting = do
+  i1 <- allocateParty "Investor1"
+  worker <- allocateParty "Worker"
+  agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
+  let cfg = GovernanceConfig with
+        maxInvestors = 3
+        votingModel = SimpleMajority
+        thresholdFraction = 0.5
+        weighted = False
+        quorumFraction = 0.5
+        defaultReviewWindow = hours 24
+  ip <- submit i1 $ createCmd (InvestorParty with
+          admin = i1
+          members = [i1]
+          pending = []
+          contributions = [Contribution with investor = i1, projectFunding = 1200.0, agentFeeFunding = 200.0, weight = 1.0]
+          config = cfg
+          agent = agent)
+  (posting, budget, agentFee) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          postingId = "job-edit", requirements = "original requirements"
+          briefUri = ""
+          budgetAmount = 1200.0
+          agentFeeAmount = 200.0
+          agentOpCost = 50.0
+          commitmentRequired = 500.0
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker]
+          publicParty = publicParty)
+          
+  -- Edit description
+  postingUpdated <- submit i1 $ exerciseCmd posting (EditPostingDescription with actor = i1, newRequirements = "updated requirements")
+  p <- queryContractId @ProjectPosting i1 postingUpdated
+  case p of
+    Some post -> assertMsg "requirements should be updated" (post.requirements == "updated requirements")
+    None -> abort "posting should exist"
+
+  -- Take down posting
+  submit i1 $ exerciseCmd postingUpdated (TakeDownPosting with actor = i1)
+  
+  -- Check that posting is archived and vaults are settled
+  postingQuery <- queryContractId @ProjectPosting i1 postingUpdated
+  case postingQuery of
+    Some _ -> abort "posting should be archived"
+    None -> pure ()
+    
+  budgetQuery <- queryContractId @AssetVault i1 budget
+  case budgetQuery of
+    Some _ -> abort "budget vault should be settled (archived)"
+    None -> pure ()
+    
+  agentFeeQuery <- queryContractId @AssetVault i1 agentFee
+  case agentFeeQuery of
+    Some _ -> abort "agent fee vault should be settled (archived)"
+    None -> pure ()
+    
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 9. Propose plan again / replace plan (single investor)
+-- ---------------------------------------------------------------------------
+
+testProposePlanAgain : Script ()
+testProposePlanAgain = do
+  i1 <- allocateParty "Investor1"
+  worker <- allocateParty "Worker"
+  agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
+  let cfg = GovernanceConfig with
+        maxInvestors = 3
+        votingModel = SimpleMajority
+        thresholdFraction = 0.5
+        weighted = False
+        quorumFraction = 0.5
+        defaultReviewWindow = hours 24
+  ip <- submit i1 $ createCmd (InvestorParty with
+          admin = i1
+          members = [i1]
+          pending = []
+          contributions = [Contribution with investor = i1, projectFunding = 2000.0, agentFeeFunding = 200.0, weight = 1.0]
+          config = cfg
+          agent = agent)
+  (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          postingId = "job-propose", requirements = "build it"
+          briefUri = ""
+          budgetAmount = 2000.0
+          agentFeeAmount = 200.0
+          agentOpCost = 50.0
+          commitmentRequired = 500.0
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker]
+          publicParty = publicParty)
+  app <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p", presentationUri = "", contactLink = "l")
+  now <- getTime
+  prop <- submit i1 $ exerciseCmd ip (OpenProposal with purpose = "select", action = SelectWinner worker, deadline = addRelTime now (days 1))
+  prop1 <- submit i1 $ exerciseCmd prop (CastProposalVote with voter = i1, vote = ACCEPT)
+  mandate <- submit i1 $ exerciseCmd posting (SelectWorker with actor = i1, proposalCid = prop1, applicationCid = app)
+  
+  -- First plan submission
+  plan1 <- submit worker $ exerciseCmd mandate (ProposePlan with milestones = [oneMilestone True 1000.0 0.1 (hours 48)], maxSubmissions = 5)
+  
+  -- Propose plan again (replaces first plan)
+  plan2 <- submit worker $ exerciseCmd plan1 (ProposePlanAgain with newMilestones = [oneMilestone True 1500.0 0.1 (hours 48)], newMaxSubmissions = 3)
+  
+  -- Verify plan1 is archived and plan2 is active
+  plan1Query <- queryContractId @WorkPlan worker plan1
+  case plan1Query of
+    Some _ -> abort "plan1 should be archived"
+    None -> pure ()
+    
+  plan2Query <- queryContractId @WorkPlan worker plan2
+  case plan2Query of
+    Some wp -> do
+      assertMsg "plan2 max submissions should be 3" (wp.maxSubmissions == 3)
+      let m = head wp.milestones
+      assertMsg "plan2 payment should be 1500" (m.payment == 1500.0)
+    None -> abort "plan2 should exist"
+    
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 10. Duplicate Application Prevention
+-- ---------------------------------------------------------------------------
+
+testDuplicateApplyRejected : Script ()
+testDuplicateApplyRejected = do
+  i1 <- allocateParty "Investor1"
+  worker <- allocateParty "Worker"
+  agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
+  let cfg = GovernanceConfig with
+        maxInvestors = 3
+        votingModel = SimpleMajority
+        thresholdFraction = 0.5
+        weighted = False
+        quorumFraction = 0.5
+        defaultReviewWindow = hours 24
+  ip <- submit i1 $ createCmd (InvestorParty with
+          admin = i1
+          members = [i1]
+          pending = []
+          contributions = [Contribution with investor = i1, projectFunding = 1200.0, agentFeeFunding = 200.0, weight = 1.0]
+          config = cfg
+          agent = agent)
+  (posting, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          postingId = "job-duplicate"
+          requirements = "original requirements"
+          briefUri = ""
+          budgetAmount = 1200.0
+          agentFeeAmount = 200.0
+          agentOpCost = 50.0
+          commitmentRequired = 500.0
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker]
+          publicParty = publicParty)
+          
+  -- First application succeeds
+  _ <- submit worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p1", presentationUri = "", contactLink = "l1")
+  
+  -- Second application from same worker fails
+  submitMustFail worker $ exerciseCmd posting (Apply with applicant = worker, presentationHash = "p2", presentationUri = "", contactLink = "l2")
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 11. Dynamic Prefix-based Worker Validation
+-- ---------------------------------------------------------------------------
+
+testDynamicPrefixApply : Script ()
+testDynamicPrefixApply = do
+  i1 <- allocateParty "Investor1"
+  worker <- allocateParty "Worker"
+  -- worker2 is allocated as "Worker" but is a separate party (different hash)
+  worker2 <- allocateParty "Worker" 
+  agent <- allocateParty "Agent"
+  publicParty <- allocateParty "Public"
+  let cfg = GovernanceConfig with
+        maxInvestors = 3
+        votingModel = SimpleMajority
+        thresholdFraction = 0.5
+        weighted = False
+        quorumFraction = 0.5
+        defaultReviewWindow = hours 24
+  ip <- submit i1 $ createCmd (InvestorParty with
+          admin = i1
+          members = [i1]
+          pending = []
+          contributions = [Contribution with investor = i1, projectFunding = 1200.0, agentFeeFunding = 200.0, weight = 1.0]
+          config = cfg
+          agent = agent)
+  -- 1. Invite Only Pool (isOpenPool = False)
+  (posting1, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          postingId = "job-invite-only"
+          requirements = "test"
+          briefUri = ""
+          budgetAmount = 1200.0
+          agentFeeAmount = 200.0
+          agentOpCost = 50.0
+          commitmentRequired = 500.0
+          recruitmentMode = "INVITE_ONLY"
+          eligibleWorkers = [partyToText worker, partyToText i1] -- worker is in the pool, worker2 is NOT
+          publicParty = publicParty)
+          
+  -- worker (exact match) -> Succeeds
+  _ <- submit worker $ exerciseCmd posting1 (Apply with applicant = worker, presentationHash = "p1", presentationUri = "", contactLink = "l1")
+  -- worker2 (different hash, not in pool) -> Fails
+  submitMustFail worker2 $ exerciseCmd posting1 (Apply with applicant = worker2, presentationHash = "p2", presentationUri = "", contactLink = "l2")
+
+  -- 2. Open Pool (isOpenPool = True)
+  (posting2, _, _) <- submit i1 $ exerciseCmd ip (SetupAndPost with
+          postingId = "job-open-pool"
+          requirements = "test"
+          briefUri = ""
+          budgetAmount = 1200.0
+          agentFeeAmount = 200.0
+          agentOpCost = 50.0
+          commitmentRequired = 500.0
+          recruitmentMode = "OPEN_POOL"
+          eligibleWorkers = ["Worker::*"]
+          publicParty = publicParty)
+          
+  -- Both worker and worker2 have display name "Worker" (with different hashes) and can apply in Open Pool
+  _ <- submitMulti [worker] [publicParty] $ 
+        exerciseCmd posting2 (Apply with applicant = worker, presentationHash = "p1", presentationUri = "", contactLink = "l1")
+  _ <- submitMulti [worker2] [publicParty] $ 
+        exerciseCmd posting2 (Apply with applicant = worker2, presentationHash = "p2", presentationUri = "", contactLink = "l2")
+  
+  -- i1 is in the pool but starts with "Investor1" (not "Worker") -> Fails in both
+  submitMultiMustFail [i1] [publicParty] $ 
+    exerciseCmd posting2 (Apply with applicant = i1, presentationHash = "p3", presentationUri = "", contactLink = "l3")
   pure ()
 
 -- ---------------------------------------------------------------------------

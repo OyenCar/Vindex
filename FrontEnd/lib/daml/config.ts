@@ -19,10 +19,8 @@ export const damlConfig = {
     investor: process.env.NEXT_PUBLIC_PARTY_INVESTOR ?? "",
     worker: process.env.NEXT_PUBLIC_PARTY_WORKER ?? "",
     agent: process.env.NEXT_PUBLIC_PARTY_AGENT ?? "",
-  } satisfies Record<Role, string>,
-  // Optional 2nd worker identity, so a real multi-applicant selection vote can be demoed. Same
-  // "worker" role, different ledger party. Empty string => the connect tile is hidden.
-  worker2: process.env.NEXT_PUBLIC_PARTY_WORKER2 ?? "",
+    public: process.env.NEXT_PUBLIC_PARTY_PUBLIC ?? "",
+  } satisfies Record<Role | "public", string>,
   // Open-job audience: the registered worker parties a NEW posting is published to. These become
   // observers of the posting (Canton has no global read, so the audience is an explicit set) and
   // are the parties allowed to apply. The investor does NOT hand-pick a winner — selection is a

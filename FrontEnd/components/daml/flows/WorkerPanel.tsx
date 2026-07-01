@@ -52,6 +52,7 @@ export function WorkerPanel() {
   const plans = useStreamQueries(Vindex.WorkPlan);
   const projects = useStreamQueries(Vindex.Project);
   const vaults = useStreamQueries(Vindex.AssetVault);
+  const applications = useStreamQueries(Vindex.Application);
   const settlements = useStreamQueries(Vindex.Settlement);
 
   const applyCmd = useCommand<unknown>();
@@ -66,6 +67,8 @@ export function WorkerPanel() {
   const myMandates = mandates.contracts.filter((m) => m.payload.worker === party);
   const myPlans = plans.contracts.filter((p) => p.payload.worker === party);
   const myProjects = projects.contracts.filter((p) => p.payload.worker === party);
+  const myApplications = applications.contracts.filter((a) => a.payload.applicant === party);
+  const mySettlements = settlements.contracts.filter((s) => s.payload.worker === party);
 
   // Parse the comma/line-separated payments the worker enters into milestone payments.
   const payments = paymentsText
@@ -105,6 +108,26 @@ export function WorkerPanel() {
         return session!.ledger.exercise(Vindex.PlanningMandate.ProposePlan, mandate.contractId, {
           milestones,
           maxSubmissions: num(maxSubmissions),
+        });
+      })
+      .catch(() => undefined);
+
+  const proposePlanAgain = (plan: (typeof plans.contracts)[number]) =>
+    planCmd
+      .run(() => {
+        if (payments.length === 0) throw new Error("Enter at least one milestone payment");
+        const maxSubmissions = Math.max(1, Math.floor(Number(maxSubText) || 1));
+        const milestones = payments.map((pay, i) => ({
+          deliverablesHash: `sha256:milestone-${i + 1}`,
+          payment: num(pay),
+          workerWindow: days(2),
+          reviewWindow: hours(24),
+          violationPct: num(PENALTY),
+          isFinal: i === payments.length - 1,
+        }));
+        return session!.ledger.exercise(Vindex.WorkPlan.ProposePlanAgain, plan.contractId, {
+          newMilestones: milestones,
+          newMaxSubmissions: num(maxSubmissions),
         });
       })
       .catch(() => undefined);
@@ -152,10 +175,18 @@ export function WorkerPanel() {
                     View project brief ↗
                   </a>
                 )}
-                <FileUpload label="Your portfolio / presentation (→ IPFS, optional)" cid={presentationCid} onUploaded={setPresentationCid} />
-                <Button size="sm" onClick={() => apply(p.contractId)} disabled={applyCmd.phase === "submitting"}>
-                  Apply{presentationCid ? " (with portfolio)" : ""}
-                </Button>
+                {myApplications.some((a) => a.payload.postingCid === p.contractId) ? (
+                  <Button size="sm" variant="secondary" className="w-full" disabled>
+                    ✓ Applied
+                  </Button>
+                ) : (
+                  <>
+                    <FileUpload label="Your portfolio / presentation (→ IPFS, optional)" cid={presentationCid} onUploaded={setPresentationCid} />
+                    <Button size="sm" onClick={() => apply(p.contractId)} disabled={applyCmd.phase === "submitting"}>
+                      Apply{presentationCid ? " (with portfolio)" : ""}
+                    </Button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -170,17 +201,52 @@ export function WorkerPanel() {
           </p>
         ) : (
           <div className="flex flex-col gap-3">
-            {myPlans.map((pl) => (
-              <div key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-success/25 bg-success/5 p-3">
-                <p className="text-[12px] text-text-primary">Plan submitted — awaiting investor approval</p>
-                <p className="text-[11px] text-text-secondary">
-                  {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions
-                </p>
-                <Button size="sm" variant="secondary" onClick={() => withdrawPlan(pl)} disabled={planCmd.phase === "submitting"}>
-                  Withdraw &amp; revise
-                </Button>
-              </div>
-            ))}
+            {myPlans.map((pl) => {
+              const envelope = envelopeOf(pl.payload.budgetVault);
+              const fits = envelope == null || required <= Number(envelope);
+              return (
+                <div key={pl.contractId} className="flex flex-col gap-3 rounded-lg border border-success/25 bg-success/5 p-3">
+                  <div>
+                    <p className="text-[12px] text-text-primary font-medium">Plan submitted — awaiting investor approval</p>
+                    <p className="text-[11px] text-text-secondary">
+                      Current: {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions
+                    </p>
+                  </div>
+                  
+                  <div className="border-t border-white/5 pt-2.5 flex flex-col gap-2">
+                    <p className="text-[11px] text-text-primary font-medium">Update Plan / Submit New Plan:</p>
+                    <Field label="New milestone payments (comma-separated)" value={paymentsText} onChange={setPaymentsText} />
+                    <Field label="New max submissions" value={maxSubText} onChange={setMaxSubText} />
+                    <p className="text-[11px] text-text-secondary">
+                      {payments.length} milestone(s) · needs ≥{" "}
+                      <span className="text-text-primary">{required.toFixed(0)}</span> (payments + {Math.round(PENALTY * 100)}% penalty buffer)
+                    </p>
+                    {!fits && (
+                      <p className="text-[11px] text-amber-300">
+                        Plan exceeds the budget envelope — lower the payments.
+                      </p>
+                    )}
+                    <div className="flex gap-2 mt-1">
+                      <Button
+                        size="sm"
+                        onClick={() => proposePlanAgain(pl)}
+                        disabled={planCmd.phase === "submitting" || payments.length === 0 || !fits}
+                      >
+                        Submit New Plan
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="secondary" 
+                        onClick={() => withdrawPlan(pl)} 
+                        disabled={planCmd.phase === "submitting"}
+                      >
+                        Withdraw &amp; Cancel
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
             {myMandates.map((m) => {
               const envelope = envelopeOf(m.payload.budgetVault);
               const fits = envelope == null || required <= Number(envelope);
@@ -295,14 +361,14 @@ export function WorkerPanel() {
           Commitment locked:{" "}
           <span className="font-mono text-text-primary">{commitment?.payload.amount ?? "—"}</span>
         </p>
-        {settlements.contracts.length === 0 ? (
+        {mySettlements.length === 0 ? (
           <p className="text-[12px] text-text-secondary">
             No fully-settled projects yet — milestone payments above are released as each milestone is
             accepted; the final settlement appears here on completion.
           </p>
         ) : (
           <ul className="flex flex-col gap-2 text-[13px]">
-            {settlements.contracts.map((s) => (
+            {mySettlements.map((s) => (
               <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
                 <span className="text-text-secondary">✅ {s.payload.reason}</span>
                 <span className="font-mono text-success">paid out {s.payload.totalPaidOut}</span>

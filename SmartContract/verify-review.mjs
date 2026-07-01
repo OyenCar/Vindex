@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_FILE = path.resolve(__dirname, "../FrontEnd/.env.local");
-const PKG = "78307962a34e50d896432d9ae539640e68e0853fdc5665a6daf5af7fed31b530";
+const PKG = "29513a7ac78bcd183b9445d7602992a6cfd7a9ad62ae03207611ee3c38d74167";
 const tpl = (e) => `${PKG}:Vindex:${e}`;
 
 function readEnv() {
@@ -37,8 +37,11 @@ if (!INVESTOR || !WORKER || !AGENT) { console.error("Missing party ids; run seed
 const b64 = (s) => Buffer.from(s).toString("base64url");
 function token(p) {
   const h = b64(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const PUBLIC = env.NEXT_PUBLIC_PARTY_PUBLIC;
+  const readAs = [p];
+  if (PUBLIC) readAs.push(PUBLIC);
   const pl = b64(JSON.stringify({
-    "https://daml.com/ledger-api": { ledgerId: LEDGER_ID, applicationId: "Vindex-verify", actAs: [p], readAs: [p] },
+    "https://daml.com/ledger-api": { ledgerId: LEDGER_ID, applicationId: "Vindex-verify", actAs: [p], readAs },
     exp: Math.floor(Date.now() / 1000) + 3600,
   }));
   const sig = crypto.createHmac("sha256", SECRET).update(`${h}.${pl}`).digest("base64url");
@@ -59,7 +62,7 @@ const exercise = (p, e, contractId, choice, argument = {}) => api("/v1/exercise"
 const exById = (p, e, contractId, choice, argument = {}) => exercise(p, e, contractId, choice, argument);
 const query = (p, e) => api("/v1/query", p, { templateIds: [tpl(e)] });
 const archive = (p, e, cid) => exercise(p, e, cid, "Archive", {});
-const rel = (s) => ({ microseconds: String(Math.round(s * 1e6)) });
+const rel = (seconds) => ({ microseconds: String(Math.round(seconds * 1e6)) });
 
 async function main() {
   console.log(`Ledger: ${BASE}\n`);
@@ -75,8 +78,12 @@ async function main() {
     });
     created.push({ p: INVESTOR, e: "InvestorParty", cid: ip.contractId });
     const post = await exercise(INVESTOR, "InvestorParty", ip.contractId, "SetupAndPost", {
+      postingId: "job-review-verify-" + Date.now(),
       requirements: "VERIFY review flow", briefUri: "",
-      budgetAmount: "4000.0", agentFeeAmount: "300.0", agentOpCost: "50.0", commitmentRequired: "500.0", workerPool: [WORKER],
+      budgetAmount: "4000.0", agentFeeAmount: "300.0", agentOpCost: "50.0", commitmentRequired: "500.0",
+      recruitmentMode: "OPEN_POOL",
+      eligibleWorkers: ["Worker::*"],
+      publicParty: env.NEXT_PUBLIC_PARTY_PUBLIC,
     });
     const postingCid = post.exerciseResult._1;
 
