@@ -1,8 +1,8 @@
-# Verdix — Project Memory (Single Source of Truth)
+# Vindex — Project Memory (Single Source of Truth)
 
 > This file is the permanent, authoritative project memory. It is derived from a full audit of
 > the actual codebase (not assumptions). A new engineer should be able to read `memory.md` and
-> `agent.md` and immediately understand what Verdix is, how it works, its current status, the
+> `agent.md` and immediately understand what Vindex is, how it works, its current status, the
 > remaining work, the architecture decisions, and how to continue development.
 >
 > **Last full audit:** 2026-06-20.
@@ -15,13 +15,13 @@
 
 ### 0.1 Product name vs. package name
 
-- **Product / brand name: "Verdix"** — used by the frontend, marketing/landing page, and all
+- **Product / brand name: "Vindex"** — used by the frontend, marketing/landing page, and all
   user-facing copy.
 - **Daml package / module name: "Vindex"** — the on-ledger Daml package is named `vindex`
   (version `0.1.0`), the module is `Vindex`, and all templates live under `Vindex:*`.
 - This split is intentional but is a known naming inconsistency (the protocol was originally
-  prototyped as "Vindex" and the product rebranded to "Verdix"). When reading Daml code you will
-  see `Vindex`; when reading the frontend you will see `Verdix`. They are the same protocol.
+  prototyped as "Vindex" and the product rebranded to "Vindex"). When reading Daml code you will
+  see `Vindex`; when reading the frontend you will see `Vindex`. They are the same protocol.
 
 ### 0.2 Two-project monorepo (no top-level git)
 
@@ -40,7 +40,7 @@ G:\web3\Hackathon\CantonEncode\
 │   ├── LICENSE
 │   ├── .daml\dist\vindex-0.1.0.dar  # compiled DAR (build artifact)
 │   └── log\canton.log, canton_errors.log  # sandbox run artifacts (safe to delete)
-└── verdix-web\                    # Next.js frontend + Canton integration (NO git)
+└── Vindex-web\                    # Next.js frontend + Canton integration (NO git)
     ├── package.json               # Next 14.2.35, @daml/ledger 2.9.4, @daml/types 2.9.4
     ├── next.config.mjs            # /ledger/* → :7575 proxy (CORS fix)
     ├── tailwind.config.ts, postcss.config.mjs, tsconfig.json
@@ -57,7 +57,7 @@ G:\web3\Hackathon\CantonEncode\
     │   └── app\                   # THE DAPP (Canton-connected)
     │       ├── layout.tsx         # wraps DamlProvider + tab nav (Console / Explorer)
     │       ├── page.tsx           # Protocol Console (role-routed panels)
-    │       └── explorer\page.tsx  # Verdix Explorer (live transparency dashboard)
+    │       └── explorer\page.tsx  # Vindex Explorer (live transparency dashboard)
     ├── components\
     │   ├── daml\                  # Canton integration UI
     │   │   ├── DamlProvider.tsx   # session/auth context, auto-reconnect, liveness ping
@@ -108,9 +108,9 @@ G:\web3\Hackathon\CantonEncode\
 
 ## 1. Project Overview
 
-### 1.1 What Verdix is
+### 1.1 What Vindex is
 
-Verdix is a **private, Canton-native, AI-governed freelance escrow protocol**. It lets a client
+Vindex is a **private, Canton-native, AI-governed freelance escrow protocol**. It lets a client
 side (a single Investor or a multi-investor Organization) and a freelancer (Worker) agree on
 **milestone-based work**, lock funds in **escrow vaults**, and have **payments, penalties,
 deadlines, and milestone progression enforced automatically and deterministically on-ledger**.
@@ -134,7 +134,7 @@ Traditional freelance platforms rely on:
   slow, opaque, expensive, and a single point of trust/failure.
 - **Manual arbitration** that is inconsistent and non-deterministic.
 
-Verdix removes the human intermediary from the enforcement loop:
+Vindex removes the human intermediary from the enforcement loop:
 
 - Funds are held in **on-ledger escrow vaults** that only move via auditable contract choices.
 - The **happy path is fully automatic**: if the investor accepts (or simply does not act within
@@ -338,8 +338,8 @@ and the Investor Party **votes** to continue or stop. On completion (or stop), a
 | **Daml JSON Ledger API** | HTTP+WebSocket bridge that `@daml/ledger` speaks | `daml json-api --http-port 7575 --allow-insecure-tokens` | **In use** — HTTP 200 verified, live streaming verified |
 | **@daml/ledger 2.9.4** | Real ledger client (create/exercise/query/stream) | `lib/daml/ledger.ts`, hooks, panels, scripts | **In use** — create+query+stream verified |
 | **@daml/types 2.9.4** | Daml value type encodings (Numeric/Int/Party = string, RelTime, etc.) | transitive + typing | **In use** |
-| **@daml.js/vindex-0.1.0** | Generated TypeScript bindings from the DAR (real templates/choices) | `verdix-web/daml.js/`, imported via `lib/daml/vindex.ts` | **In use** — regenerate with `daml codegen js` |
-| **Next.js 14.2.35 (App Router)** | React framework, routing, API route handlers, rewrite proxy | entire `verdix-web/app` | **In use** — `next build` passes |
+| **@daml.js/vindex-0.1.0** | Generated TypeScript bindings from the DAR (real templates/choices) | `Vindex-web/daml.js/`, imported via `lib/daml/vindex.ts` | **In use** — regenerate with `daml codegen js` |
+| **Next.js 14.2.35 (App Router)** | React framework, routing, API route handlers, rewrite proxy | entire `Vindex-web/app` | **In use** — `next build` passes |
 | **React 18.3.1** | UI runtime | all components | **In use** |
 | **TypeScript 5.5 (strict)** | Type safety; compiler validates every ledger payload against real bindings | whole frontend | **In use** — `tsc`/build clean |
 | **Tailwind CSS 3.4** | Styling/design tokens | `tailwind.config.ts`, `globals.css` | **In use** |
@@ -679,7 +679,7 @@ Completed → [*]
 - **Stale marketing UI:** `components/WalletSupport.tsx` still renders MetaMask / WalletConnect /
   Coinbase cards and "Powered by Wagmi + RainbowKit". This contradicts the Canton-native decision
   and should be replaced with Canton/party-connect messaging (or removed from the landing page).
-- **Branding split:** product "Verdix" vs Daml package "Vindex" (module/templates). Cosmetic but
+- **Branding split:** product "Vindex" vs Daml package "Vindex" (module/templates). Cosmetic but
   confusing; a future rename of the Daml package would change the generated package id and require
   re-codegen + frontend template-id updates.
 - **Vault observer over-share:** `AssetVault.stakeholders` include all posting `candidates`, so
@@ -762,7 +762,7 @@ cd Vindex
 "<daml.exe>" script --dar .daml/dist/vindex-0.1.0.dar --script-name Vindex.Test:testHappyPathMulti --ledger-host localhost --ledger-port 6865 --static-time
 
 # Frontend
-cd verdix-web
+cd Vindex-web
 npm install
 npm run build
 npm run dev                        # http://localhost:3939/app  (uses .env.local)
@@ -772,7 +772,7 @@ node scripts/seed-and-verify.cjs "<InvestorParty::id>" "<AgentParty::id>" sandbo
 `<daml.exe>` = `C:\Users\Asus\AppData\Roaming\daml\sdk\2.9.4\daml\daml.exe`.
 
 Regenerate TS bindings after any Daml change:
-`"<daml.exe>" codegen js .daml/dist/vindex-0.1.0.dar -o ../verdix-web/daml.js`.
+`"<daml.exe>" codegen js .daml/dist/vindex-0.1.0.dar -o ../Vindex-web/daml.js`.
 
 ---
 

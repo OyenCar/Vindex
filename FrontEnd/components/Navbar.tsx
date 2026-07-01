@@ -52,7 +52,7 @@ function Logo() {
         </svg>
       </span>
       <span className="text-[19px] font-semibold tracking-tight text-text-primary">
-        Verdix
+        Vindex
       </span>
     </span>
   );
@@ -87,7 +87,7 @@ export function Navbar() {
             : "border border-transparent bg-transparent",
         )}
       >
-        <a href="#" aria-label="Verdix home" className="shrink-0">
+        <a href="#" aria-label="Vindex home" className="shrink-0">
           <Logo />
         </a>
 

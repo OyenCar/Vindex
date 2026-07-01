@@ -13,7 +13,7 @@ function adminToken(): string {
   const ledgerId = process.env.DAML_LEDGER_ID ?? "sandbox";
   const header = { alg: "HS256", typ: "JWT" };
   const payload = {
-    "https://daml.com/ledger-api": { ledgerId, applicationId: "verdix", admin: true },
+    "https://daml.com/ledger-api": { ledgerId, applicationId: "Vindex", admin: true },
     exp: Math.floor(Date.now() / 1000) + 5 * 60,
   };
   const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;

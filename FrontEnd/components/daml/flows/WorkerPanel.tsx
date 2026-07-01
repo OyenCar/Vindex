@@ -83,7 +83,7 @@ export function WorkerPanel() {
           applicant: party,
           presentationHash: presentationCid || "sha256:portfolio",
           presentationUri: presentationCid,
-          contactLink: "https://verdix.app/contact/me",
+          contactLink: "https://Vindex.app/contact/me",
         }),
       )
       .catch(() => undefined);

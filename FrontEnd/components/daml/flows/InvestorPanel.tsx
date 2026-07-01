@@ -70,8 +70,23 @@ export function InvestorPanel() {
   const [agentFee, setAgentFee] = useState("300");
   const [commitment, setCommitment] = useState("500");
   const [reasonsText, setReasonsText] = useState("Deliverable does not meet the milestone spec");
-  const [requirements, setRequirements] = useState("Build the Verdix milestone deliverables");
+  const [requirements, setRequirements] = useState("Build the Vindex milestone deliverables");
   const [briefCid, setBriefCid] = useState("");
+  const [workers, setWorkers] = useState<string[]>(damlConfig.workerPool);
+  const [newWorkerInput, setNewWorkerInput] = useState("");
+
+  const addWorker = () => {
+    const w = newWorkerInput.trim();
+    if (w && !workers.includes(w)) {
+      setWorkers([...workers, w]);
+      setNewWorkerInput("");
+    }
+  };
+
+  const removeWorker = (w: string) => {
+    setWorkers(workers.filter((item) => item !== w));
+  };
+
   // New-project flow: each project is its own InvestorParty. `newPartyMode` forces the create form
   // even when an old (settled) party exists; `preferredPartyCid` keeps the UI on the party just made.
   const [newPartyMode, setNewPartyMode] = useState(false);
@@ -94,9 +109,6 @@ export function InvestorPanel() {
     (preferredPartyCid ? myParties.find((c) => c.contractId === preferredPartyCid) : undefined) ||
     myParties[0];
 
-  // Open posting: published to the registered worker pool (env-configured), NOT a hand-picked
-  // worker. Anyone in the pool can apply; the investor selects later by governance vote.
-  const workerPool = damlConfig.workerPool;
 
   // A worker is already chosen once a mandate / plan / project exists — selection is done, so the
   // applicant list is no longer actionable (the posting is consumed at SelectWorker; the leftover
@@ -156,7 +168,7 @@ export function InvestorPanel() {
             agentFeeAmount: num(agentFee),
             agentOpCost: num(50),
             commitmentRequired: num(commitment),
-            workerPool,
+            workerPool: workers,
           }),
         { refOf: (r) => JSON.stringify((r as unknown[])[0]) },
       )
@@ -331,25 +343,50 @@ export function InvestorPanel() {
             />
           </label>
           <FileUpload label="Project brief / reference files (→ IPFS)" cid={briefCid} onUploaded={setBriefCid} />
-          <div className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5">
-            <p className="text-[12px] text-text-primary">Open posting</p>
-            <p className="mt-0.5 text-[11px] text-text-secondary">
-              {workerPool.length > 0 ? (
-                <>
-                  Published to{" "}
-                  <span className="font-mono text-text-primary">{workerPool.length}</span> registered
-                  worker{workerPool.length > 1 ? "s" : ""}. Any of them can apply — you pick the
-                  winner by vote in <span className="text-text-primary">Applicants</span> below. You
-                  are not hiring anyone directly.
-                </>
-              ) : (
-                <span className="text-amber-300">
-                  No worker pool configured. Set <span className="font-mono">NEXT_PUBLIC_WORKER_POOL</span>{" "}
-                  (or <span className="font-mono">NEXT_PUBLIC_PARTY_WORKER</span>) in{" "}
-                  <span className="font-mono">.env.local</span> so workers can see and apply to this job.
-                </span>
-              )}
-            </p>
+          <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3 flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <span className="text-[12px] text-text-primary font-medium">Worker Audience (Open Pool)</span>
+              <span className="text-[11px] text-text-secondary">{workers.length} worker(s)</span>
+            </div>
+            
+            {workers.length > 0 ? (
+              <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
+                {workers.map((w) => (
+                  <li key={w} className="flex justify-between items-center gap-2 rounded bg-white/[0.03] border border-white/5 px-2 py-1 text-[11px] font-mono">
+                    <span className="truncate text-text-secondary" title={w}>{w}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeWorker(w)}
+                      className="text-text-secondary hover:text-red-400 transition-colors px-1"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[11px] text-amber-300">
+                No workers added. Add at least one worker party below so they can see and apply to this job.
+              </p>
+            )}
+
+            <div className="flex gap-2 mt-1">
+              <input
+                value={newWorkerInput}
+                onChange={(e) => setNewWorkerInput(e.target.value)}
+                placeholder="Worker::1220..."
+                className="flex-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[12px] text-text-primary outline-none focus:border-accent/50 font-mono"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addWorker();
+                  }
+                }}
+              />
+              <Button type="button" size="sm" onClick={addWorker}>
+                Add
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Budget envelope (cap)" value={budget} onChange={setBudget} />
@@ -365,7 +402,7 @@ export function InvestorPanel() {
           )}
           <Button
             onClick={fundAndPost}
-            disabled={postCmd.phase === "submitting" || !budgetValid || workerPool.length === 0}
+            disabled={postCmd.phase === "submitting" || !budgetValid || workers.length === 0}
           >
             Fund Vaults &amp; Post Open Job
           </Button>

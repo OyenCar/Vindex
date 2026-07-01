@@ -29,7 +29,7 @@ interface DamlContextValue {
 }
 
 const DamlContext = createContext<DamlContextValue | null>(null);
-const STORAGE_KEY = "verdix.session";
+const STORAGE_KEY = "Vindex.session";
 
 export function useDaml(): DamlContextValue {
   const ctx = useContext(DamlContext);

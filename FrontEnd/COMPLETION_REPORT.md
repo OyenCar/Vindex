@@ -1,4 +1,4 @@
-# Verdix — Completion Report
+# Vindex — Completion Report
 
 A **Canton-native** AI-governed freelance escrow platform. Daml contracts on a Canton
 participant; a Next.js/React frontend that talks to the **Daml JSON Ledger API** via

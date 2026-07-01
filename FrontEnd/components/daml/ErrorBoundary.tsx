@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     // Real apps would forward this to Sentry/Datadog; we keep it local.
-    console.error("[Verdix dapp error]", error);
+    console.error("[Vindex dapp error]", error);
   }
 
   reset = () => this.setState({ error: null });

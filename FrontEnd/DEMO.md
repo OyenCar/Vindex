@@ -1,11 +1,11 @@
-# Verdix — Live Demo Runbook
+# Vindex — Live Demo Runbook
 
 Everything below runs against a **real Canton ledger** (local sandbox). No mocks.
 
 ## 0. Prerequisites
 
 - Daml SDK 2.9.4 (`daml` on PATH, or use the full exe path).
-- Node 18+ and the app deps installed: `cd verdix-web && npm install`.
+- Node 18+ and the app deps installed: `cd Vindex-web && npm install`.
 
 ## 1. Start the ledger (3 terminals or background)
 
@@ -42,7 +42,7 @@ voting, escrow guards) executes on the actual participant.
 ## 3. Run the app
 
 ```bash
-cd verdix-web
+cd Vindex-web
 # put the allocated party ids into .env.local (NEXT_PUBLIC_PARTY_INVESTOR/WORKER/AGENT)
 npm run dev          # http://localhost:3939/app
 ```

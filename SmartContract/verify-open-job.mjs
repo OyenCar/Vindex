@@ -51,7 +51,7 @@ function mintToken(party) {
   const payload = {
     "https://daml.com/ledger-api": {
       ledgerId: LEDGER_ID,
-      applicationId: "verdix-verify",
+      applicationId: "Vindex-verify",
       actAs: [party],
       readAs: [party],
     },
@@ -134,7 +134,7 @@ async function main() {
       applicant: WORKER,
       presentationHash: "sha256:portfolio",
       presentationUri: "",
-      contactLink: "https://verdix.app/contact/verify",
+      contactLink: "https://Vindex.app/contact/verify",
     });
     const appCid = appRes.exerciseResult;
     created.unshift({ party: WORKER, entity: "Application", cid: appCid });

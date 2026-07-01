@@ -1,6 +1,6 @@
-# Verdix — Landing Hero
+# Vindex — Landing Hero
 
-A production-grade, fullscreen hero section for **Verdix**, an AI-governed freelance
+A production-grade, fullscreen hero section for **Vindex**, an AI-governed freelance
 escrow protocol. Built with Next.js (App Router), TypeScript, Tailwind CSS, Framer
 Motion, Lucide, and shadcn/ui-style primitives.
 

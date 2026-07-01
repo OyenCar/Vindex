@@ -37,7 +37,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex w-full max-w-shell items-center gap-1 px-5 py-2.5 sm:px-8">
             <Link href="/" className="mr-4 flex items-center gap-2">
               <Mark />
-              <span className="text-[15px] font-semibold tracking-tight">Verdix</span>
+              <span className="text-[15px] font-semibold tracking-tight">Vindex</span>
             </Link>
             {TABS.map((t) => (
               <Link

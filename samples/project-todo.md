@@ -1,10 +1,10 @@
 # Project To-Do — Northwind Analytics Marketing Landing Page
 
 **Role:** Front-end freelancer
-**Milestone:** 1 of 1 (final) — full landing page delivery
-**Payment:** released from the Budget Vault on acceptance
+**Milestones:** 3 (Layout & Hero → Core Sections & Polish → Final Delivery)
+**Payment:** released per milestone from the Budget Vault on acceptance
 
-This document is the **to-do list / acceptance checklist**. In the Verdix demo the investor uploads
+This document is the **to-do list / acceptance checklist**. In the Vindex demo the investor uploads
 this file as the *project brief* (its IPFS CID is stored on-ledger as `briefUri`). The AI arbitration
 agent checks the worker's submission against the numbered items below.
 
@@ -14,10 +14,12 @@ Ship it as a GitHub repository plus a live deployment URL.
 
 ## Acceptance checklist (all required unless marked optional)
 
+## Milestone 1
 1. **Responsive layout** — hero, features, pricing, and footer sections; must render correctly on
    both mobile (375px) and desktop (1440px).
 2. **Hero section** — a headline, one line of sub-copy, and a primary call-to-action button. The CTA
    must link to `/signup`.
+## Milestone 2
 3. **Features section** — exactly **4** feature cards, each with an icon, a title, and a one-line
    description.
 4. **Pricing section** — exactly **3** tiers: **Starter**, **Pro**, and **Enterprise**, each showing
@@ -27,6 +29,7 @@ Ship it as a GitHub repository plus a live deployment URL.
 6. **Performance** — mobile Lighthouse **Performance score ≥ 90**.
 7. **Accessibility** — every image has descriptive `alt` text; text/background color contrast meets
    **WCAG AA**.
+## Milestone 3
 8. **No third-party tracking** — do **not** include any third-party analytics, tracking, or form
    back-end scripts (privacy requirement). All form handling stays first-party.
 9. **Delivery** — a public GitHub repository **and** a working live deploy URL.

@@ -9,12 +9,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Verdix — AI-Governed Escrow for Freelance Work",
+  title: "Vindex — AI-Governed Escrow for Freelance Work",
   description:
-    "Verdix combines escrow vaults, milestone-based payments, investor governance, and AI-powered dispute resolution into a single trustless protocol.",
-  metadataBase: new URL("https://verdix.xyz"),
+    "Vindex combines escrow vaults, milestone-based payments, investor governance, and AI-powered dispute resolution into a single trustless protocol.",
+  metadataBase: new URL("https://Vindex.xyz"),
   openGraph: {
-    title: "Verdix — AI-Governed Escrow for Freelance Work",
+    title: "Vindex — AI-Governed Escrow for Freelance Work",
     description:
       "Trustless milestone payments, decentralized investor governance, and automated AI dispute resolution.",
     type: "website",

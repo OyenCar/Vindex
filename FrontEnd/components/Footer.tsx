@@ -45,7 +45,7 @@ export function Footer() {
         <div>
           <div className="flex items-center gap-2.5">
             <Mark />
-            <span className="text-[18px] font-semibold tracking-tight text-text-primary">Verdix</span>
+            <span className="text-[18px] font-semibold tracking-tight text-text-primary">Vindex</span>
           </div>
           <p className="mt-4 max-w-xs text-[13.5px] leading-relaxed text-text-secondary">
             A Canton-native escrow and governance protocol for milestone-based work. The ledger is
@@ -80,7 +80,7 @@ export function Footer() {
 
       <div className="border-t border-white/[0.06]">
         <div className="mx-auto flex w-full max-w-shell flex-wrap items-center justify-between gap-3 px-5 py-6 text-[12px] text-text-secondary sm:px-8">
-          <span>© {new Date().getFullYear()} Verdix. Not an EVM application.</span>
+          <span>© {new Date().getFullYear()} Vindex. Not an EVM application.</span>
           <span>Canton · Daml · IPFS</span>
         </div>
       </div>

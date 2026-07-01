@@ -141,7 +141,7 @@ export function SystemLayers() {
           One protocol, <span className="text-gradient-animated">five layers.</span>
         </h2>
         <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-text-secondary">
-          Verdix is a vertical stack — governance on top, settlement at the base. Each layer is
+          Vindex is a vertical stack — governance on top, settlement at the base. Each layer is
           enforced by Daml contracts on Canton, so the rules can&apos;t be bypassed off the ledger.
         </p>
       </div>

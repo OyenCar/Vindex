@@ -4,9 +4,9 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { KeyRound } from "lucide-react";
 
-// Canton party-access strip. Verdix authenticates Canton parties via the Daml JSON Ledger API
+// Canton party-access strip. Vindex authenticates Canton parties via the Daml JSON Ledger API
 // (party id + ledger JWT) — NOT EVM wallets. This intentionally replaces the old MetaMask /
-// WalletConnect / Wagmi strip, which advertised the exact Web3/wallet paradigm Verdix is not.
+// WalletConnect / Wagmi strip, which advertised the exact Web3/wallet paradigm Vindex is not.
 const RAILS = [
   { name: "Investor Party", glyph: "🏛️", tint: "#8B5CF6" },
   { name: "Worker", glyph: "🛠️", tint: "#10B981" },

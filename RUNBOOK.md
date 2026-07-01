@@ -1,4 +1,4 @@
-# Verdix — Run & Demo Runbook
+# Vindex — Run & Demo Runbook
 
 Everything needed to start the app from a cold machine, the full feature list, and a click‑through
 demo script. Windows / PowerShell paths are shown; on macOS/Linux use the same commands with `daml`

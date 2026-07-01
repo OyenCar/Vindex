@@ -1,7 +1,7 @@
 # Vindex
 
 Vindex is a Canton-native freelance escrow protocol implemented with Daml smart contracts and a
-Next.js frontend branded as Verdix. The ledger is the source of truth: escrow vaults, project
+Next.js frontend branded as Vindex. The ledger is the source of truth: escrow vaults, project
 state, milestone reviews, governance votes, disputes, penalties, and settlements are all modeled as
 on-ledger Daml contracts.
 
@@ -141,7 +141,7 @@ Vindex uses a dispute-only AI model:
 
 The app in `FrontEnd/` has three user-facing surfaces:
 
-- `/` - animated landing page for the Verdix protocol.
+- `/` - animated landing page for the Vindex protocol.
 - `/app` - role-based Canton protocol console.
 - `/app/explorer` - live active-contract explorer for the connected party.
 

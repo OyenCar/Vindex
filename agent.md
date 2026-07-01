@@ -1,4 +1,4 @@
-# Verdix — Agent Execution Guide
+# Vindex — Agent Execution Guide
 
 > This file is the execution guide for any future agent (human or AI) continuing development.
 > Read `memory.md` first for full project context. Keep **both** files updated after every
@@ -10,7 +10,7 @@
 
 ## 1. Mission
 
-Deliver and continuously harden a **fully functional, demo-ready, Canton-native Verdix platform**
+Deliver and continuously harden a **fully functional, demo-ready, Canton-native Vindex platform**
 — an AI-governed freelance escrow protocol where:
 
 - Daml contracts on Canton are the **single source of truth** and the enforcement engine.
@@ -41,7 +41,7 @@ executes real Daml workflows, and every user journey is verified**.
 ### 2.2 Medium priority
 
 4. Replace/repair the **stale landing UI** (`WalletSupport.tsx` Wagmi/RainbowKit/MetaMask copy)
-   with Canton/party messaging; update `verdix-web/README.md`.
+   with Canton/party messaging; update `Vindex-web/README.md`.
 5. Add a **transaction-history / event view** (Explorer enhancement) and surface real
    contract/update ids consistently.
 6. Add a **deadline / time-advance control** for in-browser Scenario 3 (or document the
@@ -88,7 +88,7 @@ Complexity scale: **S** (small, <½ day) · **M** (medium, ~1 day) · **L** (lar
 - [ ] **(Critical, M)** Invite-members UI: form on `InvestorPanel` calling `InvestorParty.InviteInvestor`; an "Invites" view for an invitee party to `AcceptInvite`. _Deps:_ existing `DamlProvider`, `useCommand`, generated bindings. _Why critical:_ unblocks live multi-investor demo.
 - [ ] **(Critical, M)** Governance-proposal UI: open proposal (`OpenProposal`), list proposals (stream `GovernanceProposal`), `CastProposalVote`, and execute (`SelectWorker` / `ResolveAfterViolation` / `TopUpAgentFee`). _Deps:_ none new.
 - [ ] **(Critical, M)** Worker-selection guided flow across roles (apply → propose → select → accept). _Deps:_ governance-proposal UI (for SelectWinner).
-- [ ] **(High, S)** Replace stale `WalletSupport.tsx` content; fix `verdix-web/README.md`. _Deps:_ none.
+- [ ] **(High, S)** Replace stale `WalletSupport.tsx` content; fix `Vindex-web/README.md`. _Deps:_ none.
 - [ ] **(High, M)** Frontend tests: component tests for panels/hooks; a Node integration test that drives a full scenario via `@daml/ledger` against a running json-api. _Deps:_ running ledger.
 - [ ] **(High, S)** One-command dev bring-up script (start sandbox + json-api + allocate + write `.env.local` + start web). _Deps:_ none.
 - [ ] **(Medium, M)** Transaction-history / event view in Explorer (surface update ids, archived events). _Deps:_ JSON API stream semantics.
@@ -115,7 +115,7 @@ Future agents **must**:
 4. **Preserve existing functionality.** Run `daml build` + `daml test` + the live scenario suite +
    `next build` after changes. Do not regress passing scenarios or the money invariant.
 5. **After any Daml change:** rebuild the DAR, **re-run `daml codegen js`** into
-   `verdix-web/daml.js`, and update the package id references if the package changes.
+   `Vindex-web/daml.js`, and update the package id references if the package changes.
 6. **Type-check against the real bindings.** Construct payloads using the generated `@daml.js/
    vindex-0.1.0` types (`Numeric`/`Int`/`Party` are strings; `RelTime = { microseconds }`).
 7. **SSR-safety:** never gate rendered DOM structure on client-only values (`useReducedMotion`,
@@ -150,7 +150,7 @@ Future agents **must**:
   `setup` init-script. `daml test` → 8/8 pass.
 - **Live-ledger run:** the 7 functional scripts pass via `daml script` against the sandbox (7/7).
 - **Frontend verification (manual/script, this session):**
-  `verdix-web/scripts/ledger-check.mjs` (HTTP 200), `verdix-web/scripts/seed-and-verify.cjs`
+  `Vindex-web/scripts/ledger-check.mjs` (HTTP 200), `Vindex-web/scripts/seed-and-verify.cjs`
   (`@daml/ledger` create+query round-trip), and Playwright (live connect + stream + real
   `SetupAndPost` write; 0 hydration/hooks/CORS errors).
 

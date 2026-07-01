@@ -73,7 +73,7 @@ export function Hero() {
             variants={item}
             className="mt-7 max-w-[640px] text-[17px] leading-relaxed text-text-secondary sm:text-lg"
           >
-            Verdix combines escrow vaults, milestone-based payments, investor
+            Vindex combines escrow vaults, milestone-based payments, investor
             governance, and AI-powered dispute resolution into a single
             Canton-native protocol. If both parties agree, payments move instantly.
             If they disagree, AI enforces the contract.

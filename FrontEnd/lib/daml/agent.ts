@@ -23,8 +23,18 @@ export interface AgentVerdictResult {
   rejectionValid: boolean;
   confidence: number;
   summary: string;
+  milestoneEvaluated?: number;
   checklist: ChecklistItem[];
   rejectionAssessment: RejectionAssessment[];
+}
+
+export interface MilestoneSpecInput {
+  deliverablesHash?: string;
+  payment?: string;
+  workerWindow?: { microseconds: string };
+  reviewWindow?: { microseconds: string };
+  violationPct?: string;
+  isFinal?: boolean;
 }
 
 export interface AgentVerdictInput {
@@ -33,6 +43,9 @@ export interface AgentVerdictInput {
   submissionText?: string;
   submissionUri?: string | null;
   rejectionReasons: string[];
+  milestoneIndex?: number;
+  totalMilestones?: number;
+  milestoneSpec?: MilestoneSpecInput | null;
 }
 
 export async function runAgentVerdict(input: AgentVerdictInput): Promise<AgentVerdictResult> {

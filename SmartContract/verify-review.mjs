@@ -38,7 +38,7 @@ const b64 = (s) => Buffer.from(s).toString("base64url");
 function token(p) {
   const h = b64(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const pl = b64(JSON.stringify({
-    "https://daml.com/ledger-api": { ledgerId: LEDGER_ID, applicationId: "verdix-verify", actAs: [p], readAs: [p] },
+    "https://daml.com/ledger-api": { ledgerId: LEDGER_ID, applicationId: "Vindex-verify", actAs: [p], readAs: [p] },
     exp: Math.floor(Date.now() / 1000) + 3600,
   }));
   const sig = crypto.createHmac("sha256", SECRET).update(`${h}.${pl}`).digest("base64url");

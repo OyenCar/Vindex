@@ -11,7 +11,7 @@ const header = { alg: "HS256", typ: "JWT" };
 const payload = {
   "https://daml.com/ledger-api": {
     ledgerId,
-    applicationId: "verdix",
+    applicationId: "Vindex",
     actAs: [party],
     readAs: [party],
   },

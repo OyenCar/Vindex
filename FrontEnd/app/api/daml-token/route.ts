@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
   const payload = {
     "https://daml.com/ledger-api": {
       ledgerId,
-      applicationId: "verdix",
+      applicationId: "Vindex",
       actAs: [party],
       readAs: [party],
     },

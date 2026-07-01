@@ -1,4 +1,4 @@
-# Verdix seed helper — run AFTER the sandbox is up ("Canton sandbox is ready.").
+# Vindex seed helper — run AFTER the sandbox is up ("Canton sandbox is ready.").
 # Uploads the DAR, allocates Investor/Worker/Agent, and writes the new party ids into
 # FrontEnd/.env.local. Then restart json-api and `npm run dev`.
 #

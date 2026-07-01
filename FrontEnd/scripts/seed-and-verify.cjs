@@ -16,7 +16,7 @@ function token(party) {
   const p = {
     "https://daml.com/ledger-api": {
       ledgerId,
-      applicationId: "verdix",
+      applicationId: "Vindex",
       actAs: [party],
       readAs: [party],
     },

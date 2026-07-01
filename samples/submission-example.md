@@ -1,11 +1,12 @@
 # Milestone Submission — Northwind Analytics Landing Page
 
 **From:** Worker (freelancer)
-**Re:** Milestone 1 (final)
+**Re:** Milestone 2 of 3 — Core Sections & Polish
+**Previous:** Milestone 1 (Layout & Hero) — accepted ✓
 
-In the Verdix demo the worker uploads this file as the *deliverable* (its IPFS CID is stored
+In the Vindex demo the worker uploads this file as the *deliverable* (its IPFS CID is stored
 on-ledger as the project's `currentSubmissionUri`). The AI arbitration agent reads it and matches it
-against the project to-do list.
+against the project to-do list — specifically the acceptance criteria for **milestone 2** only.
 
 ## What I delivered
 

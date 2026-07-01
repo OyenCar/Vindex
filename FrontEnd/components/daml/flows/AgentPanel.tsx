@@ -46,6 +46,9 @@ function DisputeCard({
     setAiError(null);
     setAi(null);
     try {
+      const msIdx = Number(p.payload.currentIndex);
+      const msTotal = p.payload.milestones.length;
+      const msSpec = p.payload.milestones[msIdx] ?? null;
       const result = await runAgentVerdict({
         // Brief (IPFS) is preferred by the route; the on-ledger description is the always-present
         // fallback so the agent has a to-do even when the brief failed to pin.
@@ -54,6 +57,9 @@ function DisputeCard({
         submissionText: submissionPaste || undefined,
         submissionUri: p.payload.currentSubmissionUri,
         rejectionReasons: reasons,
+        milestoneIndex: msIdx,
+        totalMilestones: msTotal,
+        milestoneSpec: msSpec,
       });
       setAi(result);
     } catch (e) {
