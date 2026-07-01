@@ -11,6 +11,7 @@ import { damlConfig } from "@/lib/daml/config";
 import { ipfsUrl } from "@/lib/daml/storage";
 import { Vindex, num, hours, STATUS_LABEL } from "@/lib/daml/vindex";
 import { cn } from "@/lib/utils";
+import { Info, HelpCircle, FileText, Settings, ShieldAlert, Award } from "lucide-react";
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
@@ -32,15 +33,15 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50"
+        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50 font-sans"
       />
     </label>
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className="glass flex flex-col gap-3 rounded-2xl p-5">
+    <section className={cn("glass flex flex-col gap-3 rounded-2xl p-5", className)}>
       <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
       {children}
     </section>
@@ -108,41 +109,62 @@ function SetupTab({
   setNewPartyMode,
 }: any) {
   return (
-    <div className="flex flex-col gap-4">
-      {!myParty || newPartyMode ? (
-        <Card title="Create Investor Party">
-          <p className="text-[12px] text-text-secondary">
-            Each project is its own Investor Party (a fresh funding pool + governance group).
-          </p>
-          <Field label="AI Agent party id" value={agent} onChange={setAgent} placeholder="Agent::1220…" />
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Budget funding" value={budget} onChange={setBudget} />
-            <Field label="Agent-fee funding" value={agentFee} onChange={setAgentFee} />
-          </div>
-          <Button onClick={createParty} disabled={!agent || createCmd.phase === "submitting"}>
-            Create Investor Party
-          </Button>
-          {myParty && (
-            <Button variant="ghost" size="sm" onClick={() => setNewPartyMode(false)}>
-              Cancel
-            </Button>
-          )}
-          <TxStatus status={createCmd} />
-        </Card>
-      ) : (
-        <Card title="Investor Party">
-          <div className="rounded-lg border border-success/25 bg-success/5 px-4 py-3">
-            <p className="text-[12px] text-success font-medium">✓ Investor Party active</p>
-            <p className="text-[11px] text-text-secondary mt-0.5">
-              {myParty.payload.members.length} member(s) · Agent:{" "}
-              <span className="font-mono text-text-primary text-[10px]">{myParty.payload.agent}</span>
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: Setup form or active party details */}
+      <div className="flex flex-col gap-4">
+        {!myParty || newPartyMode ? (
+          <Card title="Create Investor Party">
+            <p className="text-[12px] text-text-secondary">
+              Each project is its own Investor Party (a fresh funding pool + governance group).
             </p>
+            <Field label="AI Agent party id" value={agent} onChange={setAgent} placeholder="Agent::1220…" />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Budget funding" value={budget} onChange={setBudget} />
+              <Field label="Agent-fee funding" value={agentFee} onChange={setAgentFee} />
+            </div>
+            <Button onClick={createParty} disabled={!agent || createCmd.phase === "submitting"}>
+              Create Investor Party
+            </Button>
+            {myParty && (
+              <Button variant="ghost" size="sm" onClick={() => setNewPartyMode(false)}>
+                Cancel
+              </Button>
+            )}
+            <TxStatus status={createCmd} />
+          </Card>
+        ) : (
+          <Card title="Investor Party Details">
+            <div className="rounded-lg border border-success/25 bg-success/5 px-4 py-3">
+              <p className="text-[12px] text-success font-semibold">✓ Investor Party active</p>
+              <p className="text-[11px] text-text-secondary mt-0.5">
+                {myParty.payload.members.length} member(s) · Agent:{" "}
+                <span className="font-mono text-text-primary text-[10px]">{myParty.payload.agent}</span>
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={() => setNewPartyMode(true)}>
+              + Start a separate project (new Investor Party)
+            </Button>
+          </Card>
+        )}
+      </div>
+
+      {/* Right Col: Setup Instructions */}
+      <Card title="Investor Guide">
+        <div className="flex flex-col gap-3 text-[12px] text-text-secondary leading-relaxed">
+          <div className="flex gap-2">
+            <Settings className="h-4 w-4 text-accent-soft shrink-0" />
+            <p>Define project parameters and deploy a specialized multi-sig governance party.</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setNewPartyMode(true)}>
-            + Start a separate project (new Investor Party)
-          </Button>
-        </Card>
-      )}
+          <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
+            <h4 className="font-semibold text-text-primary text-[11px] uppercase tracking-wider">Setup Checklist:</h4>
+            <ul className="flex flex-col gap-2 list-disc pl-4 text-[11px]">
+              <li>Specify a valid AI Agent party ID for automated dispute resolution arbitration.</li>
+              <li>Provide budget funding to overfund milestones.</li>
+              <li>Setup is on-ledger, giving finality of governance rules.</li>
+            </ul>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -185,225 +207,232 @@ function PostTab({
   const budgetValid = Number.isFinite(budgetNum) && budgetNum > 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      {myParty && (
-        <Card title="Fund Vaults &amp; Publish Job">
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-text-secondary">Project description</span>
-            <textarea
-              value={requirements}
-              onChange={(e) => setRequirements(e.target.value)}
-              rows={2}
-              className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50"
-            />
-          </label>
-          <FileUpload label="Project brief / reference files (→ IPFS)" cid={briefCid} onUploaded={setBriefCid} />
+    <div className="grid gap-6 lg:grid-cols-[1fr_380px] items-start">
+      {/* Left Col: Setup vaults and post job */}
+      <div className="flex flex-col gap-4">
+        {myParty ? (
+          <Card title="Fund Vaults &amp; Publish Job">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-text-secondary">Project description</span>
+              <textarea
+                value={requirements}
+                onChange={(e) => setRequirements(e.target.value)}
+                rows={2}
+                className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50 font-sans"
+              />
+            </label>
+            <FileUpload label="Project brief / reference files (→ IPFS)" cid={briefCid} onUploaded={setBriefCid} />
 
-          {/* Posting mode toggle */}
-          <div className="flex justify-between items-center bg-white/[0.02] border border-white/8 rounded-xl p-3">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[12px] font-semibold text-text-primary">Posting Mode</span>
-              <span className="text-[11px] text-text-secondary">
-                {isOpenPool ? "Open Pool (any Worker can apply)" : "Invite Only (only pool members can apply)"}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsOpenPool(!isOpenPool)}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                isOpenPool ? "bg-emerald-500" : "bg-white/10"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  isOpenPool ? "translate-x-4" : "translate-x-0"
+            {/* Posting mode toggle */}
+            <div className="flex justify-between items-center bg-white/[0.02] border border-white/8 rounded-xl p-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[12px] font-semibold text-text-primary">Posting Mode</span>
+                <span className="text-[11px] text-text-secondary">
+                  {isOpenPool ? "Open Pool (any Worker can apply)" : "Invite Only (only pool members can apply)"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpenPool(!isOpenPool)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
+                  isOpenPool ? "bg-emerald-500" : "bg-white/10"
                 }`}
-              />
-            </button>
-          </div>
-
-          {/* Worker pool */}
-          <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3 flex flex-col gap-2">
-            <div className="flex justify-between items-center">
-              <span className="text-[12px] text-text-primary font-medium">
-                {isOpenPool ? "Worker Audience (Open Pool)" : "Invited Workers (Invite Only)"}
-              </span>
-              <span className="text-[11px] text-text-secondary">{workers.length} worker(s)</span>
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isOpenPool ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </button>
             </div>
-            {workers.length > 0 ? (
-              <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
-                {workers.map((w: string) => (
-                  <li key={w} className="flex justify-between items-center gap-2 rounded bg-white/[0.03] border border-white/5 px-2 py-1 text-[11px] font-mono">
-                    <span className="truncate text-text-secondary" title={w}>{w}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeWorker(w)}
-                      className="text-text-secondary hover:text-red-400 transition-colors px-1"
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[11px] text-amber-300">
-                {isOpenPool
-                  ? "No workers pre-added. The system will accept any Worker:: party."
-                  : "No workers added. Add at least one worker party below so they can see and apply to this job."}
-              </p>
+
+            {/* Worker pool */}
+            <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3 flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <span className="text-[12px] text-text-primary font-medium">
+                  {isOpenPool ? "Worker Audience (Open Pool)" : "Invited Workers (Invite Only)"}
+                </span>
+                <span className="text-[11px] text-text-secondary">{workers.length} worker(s)</span>
+              </div>
+              {workers.length > 0 ? (
+                <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
+                  {workers.map((w: string) => (
+                    <li key={w} className="flex justify-between items-center gap-2 rounded bg-white/[0.03] border border-white/5 px-2 py-1 text-[11px] font-mono">
+                      <span className="truncate text-text-secondary" title={w}>{w}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeWorker(w)}
+                        className="text-text-secondary hover:text-red-400 transition-colors px-1"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-amber-300">
+                  {isOpenPool
+                    ? "No workers pre-added. The system will accept any Worker:: party."
+                    : "No workers added. Add at least one worker party below so they can see and apply to this job."}
+                </p>
+              )}
+              <div className="flex gap-2 mt-1">
+                <input
+                  value={newWorkerInput}
+                  onChange={(e) => setNewWorkerInput(e.target.value)}
+                  placeholder="Worker::1220..."
+                  className="flex-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[12px] text-text-primary outline-none focus:border-accent/50 font-mono"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); addWorker(); }
+                  }}
+                />
+                <Button type="button" size="sm" onClick={addWorker}>Add</Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Budget envelope (cap)" value={budget} onChange={setBudget} />
+              <Field label="Required worker stake" value={commitment} onChange={setCommitment} />
+            </div>
+            <p className="text-[11px] text-text-secondary">
+              You fund the budget <span className="text-text-primary">envelope</span> and set the worker
+              stake. After you select a worker, they draft the milestone plan for you to approve.
+            </p>
+            {!budgetValid && (
+              <p className="text-[11px] text-amber-300">Enter a budget envelope greater than 0.</p>
             )}
-            <div className="flex gap-2 mt-1">
-              <input
-                value={newWorkerInput}
-                onChange={(e) => setNewWorkerInput(e.target.value)}
-                placeholder="Worker::1220..."
-                className="flex-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[12px] text-text-primary outline-none focus:border-accent/50 font-mono"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); addWorker(); }
-                }}
-              />
-              <Button type="button" size="sm" onClick={addWorker}>Add</Button>
-            </div>
+            <Button
+              onClick={fundAndPost}
+              disabled={postCmd.phase === "submitting" || !budgetValid || (!isOpenPool && workers.length === 0)}
+            >
+              Fund Vaults &amp; Post Job
+            </Button>
+            <TxStatus status={postCmd} />
+          </Card>
+        ) : (
+          <div className="glass rounded-2xl p-5 text-center">
+            <p className="text-[13px] text-text-secondary">
+              Go to the <span className="text-text-primary font-medium">Setup</span> tab to create an Investor Party first.
+            </p>
           </div>
+        )}
+      </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Budget envelope (cap)" value={budget} onChange={setBudget} />
-            <Field label="Required worker stake" value={commitment} onChange={setCommitment} />
-          </div>
-          <p className="text-[11px] text-text-secondary">
-            You fund the budget <span className="text-text-primary">envelope</span> and set the worker
-            stake. After you select a worker, they draft the milestone plan for you to approve.
-          </p>
-          {!budgetValid && (
-            <p className="text-[11px] text-amber-300">Enter a budget envelope greater than 0.</p>
-          )}
-          <Button
-            onClick={fundAndPost}
-            disabled={postCmd.phase === "submitting" || !budgetValid || (!isOpenPool && workers.length === 0)}
-          >
-            Fund Vaults &amp; Post Job
-          </Button>
-          <TxStatus status={postCmd} />
-        </Card>
-      )}
-
-      {/* Active Postings */}
-      {myPostings.length > 0 && (
-        <Card title="Active Job Postings">
-          <div className="flex flex-col gap-4">
-            {myPostings.map((post: any) => {
-              const isEditing = editingPostingCid === post.contractId;
-              const openApplications = applications.contracts.filter(
-                (a: any) => a.payload.postingCid === post.contractId,
-              );
-              return (
-                <div key={post.contractId} className="flex flex-col gap-3 rounded-xl border border-white/8 bg-white/[0.01] p-4">
-                  <div>
-                    <span className="text-[11px] text-text-secondary block mb-1">Job Description:</span>
-                    {isEditing ? (
-                      <div className="flex flex-col gap-2">
-                        <textarea
-                          value={editingRequirements}
-                          onChange={(e) => setEditingRequirements(e.target.value)}
-                          rows={3}
-                          className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50"
-                        />
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => handleEditDescription(post.contractId, editingRequirements)} disabled={postCmd.phase === "submitting"}>
-                            Save Changes
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={() => setEditingPostingCid(null)}>
-                            Cancel
+      {/* Right Col: Active Job Postings & Applicants list */}
+      <div className="flex flex-col gap-4">
+        <Card title="Active Postings & Applicants">
+          {myPostings.length === 0 ? (
+            <p className="text-[12px] text-text-secondary leading-relaxed">
+              No active job postings. Publish a job on the left to start collecting worker applications.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {myPostings.map((post: any) => {
+                const isEditing = editingPostingCid === post.contractId;
+                const openApplications = applications.contracts.filter(
+                  (a: any) => a.payload.postingCid === post.contractId,
+                );
+                return (
+                  <div key={post.contractId} className="flex flex-col gap-3 rounded-xl border border-white/8 bg-white/[0.01] p-3.5">
+                    <div>
+                      <span className="text-[11px] text-text-secondary block mb-1">Requirements:</span>
+                      {isEditing ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea
+                            value={editingRequirements}
+                            onChange={(e) => setEditingRequirements(e.target.value)}
+                            rows={3}
+                            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50 font-sans"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleEditDescription(post.contractId, editingRequirements)} disabled={postCmd.phase === "submitting"}>
+                              Save
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => setEditingPostingCid(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-[12px] text-text-primary bg-white/[0.02] border border-white/5 rounded-lg p-2 whitespace-pre-wrap">
+                            {post.payload.requirements}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => { setEditingRequirements(post.payload.requirements); setEditingPostingCid(post.contractId); }}
+                          >
+                            Edit
                           </Button>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <p className="text-[13px] text-text-primary bg-white/[0.02] border border-white/5 rounded-lg p-2.5 whitespace-pre-wrap">
-                          {post.payload.requirements}
-                        </p>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => { setEditingRequirements(post.payload.requirements); setEditingPostingCid(post.contractId); }}
-                        >
-                          Edit Description
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-[12px] border-t border-white/5 pt-3">
-                    <div>
-                      <span className="text-[11px] text-text-secondary block">Required Worker Stake:</span>
-                      <span className="font-mono text-text-primary">{post.payload.commitmentRequired}</span>
+                      )}
                     </div>
-                    <div>
-                      <span className="text-[11px] text-text-secondary block">Recruitment Pool:</span>
-                      <span className="text-text-primary">
-                        {post.payload.recruitmentMode === "OPEN_POOL"
-                          ? "Open Pool (Worker::*)"
-                          : `${post.payload.eligibleWorkers.length} workers`}
-                      </span>
+
+                    <div className="flex flex-col gap-1 text-[11px] text-text-secondary border-t border-white/5 pt-2">
+                      <div className="flex justify-between">
+                        <span>Required Stake:</span>
+                        <span className="font-mono text-text-primary font-semibold">{post.payload.commitmentRequired}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Recruitment Mode:</span>
+                        <span className="text-text-primary font-semibold">
+                          {post.payload.recruitmentMode === "OPEN_POOL" ? "Open Pool" : "Invite Only"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Applicants */}
+                    <div className="border-t border-white/5 pt-2">
+                      <span className="text-[11px] text-text-secondary block mb-1.5 font-semibold">Applicants:</span>
+                      {openApplications.length === 0 ? (
+                        <p className="text-[11px] text-text-secondary italic">No applicants yet.</p>
+                      ) : (
+                        <ul className="flex flex-col gap-2">
+                          {openApplications.map((a: any) => (
+                            <li key={a.contractId} className="flex flex-col gap-2 rounded-lg border border-white/5 bg-white/[0.02] p-2.5 text-[11px]">
+                              <div className="flex flex-col">
+                                <span className="font-mono text-text-secondary truncate" title={a.payload.applicant}>
+                                  {a.payload.applicant}
+                                </span>
+                                {ipfsUrl(a.payload.presentationUri) ? (
+                                  <a href={ipfsUrl(a.payload.presentationUri)!} target="_blank" rel="noreferrer" className="text-[10px] text-accent-soft hover:underline mt-0.5">
+                                    View portfolio ↗
+                                  </a>
+                                ) : (
+                                  a.payload.contactLink && (
+                                    <span className="truncate text-[10px] text-text-secondary mt-0.5">{a.payload.contactLink}</span>
+                                  )
+                                )}
+                              </div>
+                              <Button size="sm" className="w-full mt-1" onClick={() => selectApplicant(a)} disabled={selectCmd.phase === "submitting"}>
+                                Select &amp; Offer
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="border-t border-white/5 pt-2 mt-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="w-full border-red-500/30 hover:border-red-500/50 hover:bg-red-500/10 text-red-400"
+                        onClick={() => handleTakeDown(post.contractId)}
+                        disabled={postCmd.phase === "submitting"}
+                      >
+                        Archive Posting
+                      </Button>
                     </div>
                   </div>
-
-                  <div className="border-t border-white/5 pt-3">
-                    <span className="text-[11px] text-text-secondary block mb-1.5 font-medium">Applicants:</span>
-                    {openApplications.length === 0 ? (
-                      <p className="text-[11px] text-text-secondary italic">No applicants yet.</p>
-                    ) : (
-                      <ul className="flex flex-col gap-2">
-                        {openApplications.map((a: any) => (
-                          <li key={a.contractId} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-1.5 text-[12px]">
-                            <div className="flex min-w-0 flex-col">
-                              <span className="min-w-0 truncate font-mono text-text-secondary" title={a.payload.applicant}>
-                                {a.payload.applicant}
-                              </span>
-                              {ipfsUrl(a.payload.presentationUri) ? (
-                                <a href={ipfsUrl(a.payload.presentationUri)!} target="_blank" rel="noreferrer" className="text-[10px] text-accent-soft hover:underline">
-                                  View portfolio ↗
-                                </a>
-                              ) : (
-                                a.payload.contactLink && (
-                                  <span className="truncate text-[10px] text-text-secondary">{a.payload.contactLink}</span>
-                                )
-                              )}
-                            </div>
-                            <Button size="sm" onClick={() => selectApplicant(a)} disabled={selectCmd.phase === "submitting"}>
-                              Select &amp; Offer
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-
-                  <div className="border-t border-white/5 pt-3 mt-1">
-                    <Button
-                      variant="secondary"
-                      className="w-full border-red-500/30 hover:border-red-500/50 hover:bg-red-500/10 text-red-400"
-                      onClick={() => handleTakeDown(post.contractId)}
-                      disabled={postCmd.phase === "submitting"}
-                    >
-                      Take Down &amp; Refund Vaults
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
           <TxStatus status={selectCmd} />
         </Card>
-      )}
-
-      {!myParty && (
-        <div className="glass rounded-2xl p-5 text-center">
-          <p className="text-[13px] text-text-secondary">
-            Go to the <span className="text-text-primary font-medium">Setup</span> tab to create an Investor Party first.
-          </p>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -418,56 +447,79 @@ function ReviewTab({
   rejectPlan,
   planRequired,
 }: any) {
+  const hasActivePlans = myMandates.length > 0 || myPlans.length > 0;
+
   return (
-    <Card title="Worker Plans — Approve">
-      {myMandates.length === 0 && myPlans.length === 0 ? (
-        <p className="text-[12px] text-text-secondary">
-          No plans yet. After you select a worker, they draft a plan here for your approval.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {myMandates.map((m: any) => (
-            <li key={m.contractId} className="rounded-lg border border-white/8 px-3 py-2 text-[12px] text-text-secondary">
-              Worker selected — waiting for{" "}
-              <span className="font-mono text-text-primary">{m.payload.worker}</span> to submit a plan…
-            </li>
-          ))}
-          {myPlans.map((pl: any) => {
-            const required = planRequired(pl);
-            return (
-              <li key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
-                <p className="text-[12px] text-text-secondary">
-                  Plan from <span className="font-mono text-text-primary">{pl.payload.worker}</span>
-                </p>
-                <ul className="flex flex-col gap-1 text-[12px]">
-                  {pl.payload.milestones.map((m: any, i: number) => (
-                    <li key={i} className="flex justify-between">
-                      <span className="text-text-secondary">
-                        Milestone {i + 1}{m.isFinal ? " (final)" : ""}
-                      </span>
-                      <span className="font-mono text-text-primary">{m.payment}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="text-[11px] text-text-secondary">
-                  {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions · needs ≥{" "}
-                  <span className="text-text-primary">{required.toFixed(0)}</span> from the envelope
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => approvePlan(pl)} disabled={planCmd.phase === "submitting"}>
-                    Approve plan &amp; start project
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => rejectPlan(pl)} disabled={planCmd.phase === "submitting"}>
-                    Reject — ask to revise
-                  </Button>
-                </div>
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: list of submitted worker plans */}
+      <Card title="Worker SOW Approvals">
+        {!hasActivePlans ? (
+          <p className="text-[12px] text-text-secondary">
+            No plans yet. After you select a worker, they draft a plan here for your approval.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {myMandates.map((m: any) => (
+              <li key={m.contractId} className="rounded-lg border border-white/8 px-3 py-2 text-[12px] text-text-secondary">
+                Worker selected — waiting for{" "}
+                <span className="font-mono text-text-primary">{m.payload.worker}</span> to submit a plan…
               </li>
-            );
-          })}
-        </ul>
-      )}
-      <TxStatus status={planCmd} />
-    </Card>
+            ))}
+            {myPlans.map((pl: any) => {
+              const required = planRequired(pl);
+              return (
+                <li key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
+                  <p className="text-[12px] text-text-secondary font-medium">
+                    Plan from <span className="font-mono text-text-primary">{pl.payload.worker}</span>
+                  </p>
+                  <ul className="flex flex-col gap-1 text-[12px] border-t border-b border-white/5 py-1.5 my-1">
+                    {pl.payload.milestones.map((m: any, i: number) => (
+                      <li key={i} className="flex justify-between py-0.5">
+                        <span className="text-text-secondary">
+                          Milestone {i + 1}{m.isFinal ? " (final)" : ""}
+                        </span>
+                        <span className="font-mono text-text-primary font-semibold">{m.payment}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-text-secondary">
+                    {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions · needs ≥{" "}
+                    <span className="text-text-primary font-semibold">{required.toFixed(0)}</span> from the envelope
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    <Button size="sm" onClick={() => approvePlan(pl)} disabled={planCmd.phase === "submitting"}>
+                      Approve &amp; Start
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => rejectPlan(pl)} disabled={planCmd.phase === "submitting"}>
+                      Reject &amp; Ask to Revise
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <TxStatus status={planCmd} />
+      </Card>
+
+      {/* Right Col: Review Guidelines */}
+      <Card title="Plan Audit Guidelines">
+        <div className="flex flex-col gap-3 text-[12px] text-text-secondary leading-relaxed">
+          <div className="flex gap-2">
+            <Info className="h-4 w-4 text-accent-soft shrink-0" />
+            <p>Review the SOW proposal. Your approval locks the escrow vault and starts the project.</p>
+          </div>
+          <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
+            <h4 className="font-semibold text-text-primary text-[11px] uppercase tracking-wider">Review Steps:</h4>
+            <ul className="flex flex-col gap-2 list-disc pl-4 text-[11px]">
+              <li>Validate the milestone count against project requirements.</li>
+              <li>Ensure the sum matches the agreed freelance terms.</li>
+              <li>Approval creates the live project contract instantly on Canton.</li>
+            </ul>
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 }
 
@@ -486,104 +538,119 @@ function MonitorTab({
   rejectSubmission,
 }: any) {
   return (
-    <div className="flex flex-col gap-4">
-      {/* Escrow Vaults */}
-      <Card title="Escrow Vaults (live)">
-        {vaults.loading ? (
-          <p className="text-[12px] text-text-secondary">Subscribing…</p>
-        ) : myVaults.length === 0 ? (
-          <p className="text-[12px] text-text-secondary">No vaults yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {myVaults.map((v: any) => (
-              <li key={v.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2 text-[13px]">
-                <span className="text-text-secondary">{v.payload.vaultType}</span>
-                <span className="font-mono text-text-primary">{v.payload.amount}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      {/* Review Submissions */}
-      <Card title="Review Submissions">
-        {myReviews.length === 0 ? (
-          <p className="text-[12px] text-text-secondary">No open milestone reviews.</p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {myReviews.map((r: any) => {
-              const proj = myProjects.find(
-                (p: any) =>
-                  p.payload.status === "Submitted" &&
-                  Number(p.payload.currentIndex) === Number(r.payload.milestoneIndex),
-              );
-              const submissionUrl = proj && ipfsUrl(proj.payload.currentSubmissionUri);
-              const busy = voteCmd.phase === "submitting";
-              return (
-                <li key={r.contractId} className="rounded-lg border border-white/8 p-3">
-                  <p className="mb-2 text-[12px] text-text-secondary">
-                    Milestone #{Number(r.payload.milestoneIndex) + 1} · cycle {r.payload.cycle} · {r.payload.votes.length} vote(s)
-                  </p>
-                  {submissionUrl && (
-                    <a href={submissionUrl} target="_blank" rel="noreferrer" className="mb-2 inline-block text-[12px] text-accent-soft hover:underline">
-                      View deliverable ↗
-                    </a>
-                  )}
-                  {!proj ? (
-                    <p className="text-[12px] text-text-secondary">Waiting for the submission…</p>
-                  ) : (
-                    <>
-                      <Button size="sm" onClick={() => acceptSubmission(r, proj)} disabled={busy}>
-                        Accept &amp; release payment
-                      </Button>
-                      <div className="mt-3 flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
-                        <span className="text-[11px] text-text-secondary">
-                          Or reject &amp; send to the AI agent (one reason per line):
-                        </span>
-                        <textarea
-                          value={reasonsText}
-                          onChange={(e) => setReasonsText(e.target.value)}
-                          rows={2}
-                          placeholder="One reason per line…"
-                          className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[12px] text-text-primary outline-none focus:border-accent/50"
-                        />
-                        <Button size="sm" variant="secondary" onClick={() => rejectSubmission(r, proj)} disabled={busy}>
-                          Reject → send to AI agent
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: Milestone Reviews & Projects status */}
+      <div className="flex flex-col gap-4">
+        {/* Review Submissions */}
+        <Card title="Active Milestone Reviews">
+          {myReviews.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No open milestone reviews.</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {myReviews.map((r: any) => {
+                const proj = myProjects.find(
+                  (p: any) =>
+                    p.payload.status === "Submitted" &&
+                    Number(p.payload.currentIndex) === Number(r.payload.milestoneIndex),
+                );
+                const submissionUrl = proj && ipfsUrl(proj.payload.currentSubmissionUri);
+                const busy = voteCmd.phase === "submitting";
+                return (
+                  <li key={r.contractId} className="rounded-lg border border-white/8 p-3.5">
+                    <p className="mb-2 text-[12px] text-text-secondary">
+                      Milestone #{Number(r.payload.milestoneIndex) + 1} · cycle {r.payload.cycle} · {r.payload.votes.length} vote(s)
+                    </p>
+                    {submissionUrl && (
+                      <a href={submissionUrl} target="_blank" rel="noreferrer" className="mb-3 inline-block text-[12px] text-accent-soft hover:underline">
+                        View submitted deliverable ↗
+                      </a>
+                    )}
+                    {!proj ? (
+                      <p className="text-[12px] text-text-secondary">Waiting for worker submission upload…</p>
+                    ) : (
+                      <div className="flex flex-col gap-3 border-t border-white/5 pt-3">
+                        <Button size="sm" onClick={() => acceptSubmission(r, proj)} disabled={busy}>
+                          Accept &amp; Release Payment
                         </Button>
+                        <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
+                          <span className="text-[11px] text-text-secondary font-medium">
+                            Reject &amp; Escalate to AI Agent (one reason per line):
+                          </span>
+                          <textarea
+                            value={reasonsText}
+                            onChange={(e) => setReasonsText(e.target.value)}
+                            rows={2}
+                            placeholder="Reason for rejection…"
+                            className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[12px] text-text-primary outline-none focus:border-accent/50 font-sans"
+                          />
+                          <Button size="sm" variant="secondary" onClick={() => rejectSubmission(r, proj)} disabled={busy}>
+                            Reject → Escalate
+                          </Button>
+                        </div>
                       </div>
-                    </>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <TxStatus status={voteCmd} />
-      </Card>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <TxStatus status={voteCmd} />
+        </Card>
 
-      {/* Projects & Settlements */}
-      <Card title="Projects &amp; Settlements (live)">
-        {myProjects.length === 0 && mySettlements.length === 0 ? (
-          <p className="text-[12px] text-text-secondary">No active projects or settlements yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-2 text-[13px]">
-            {myProjects.map((p: any) => (
-              <li key={p.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2">
-                <span className="text-text-secondary">
-                  Milestone {Number(p.payload.currentIndex) + 1}/{p.payload.milestones.length}
-                </span>
-                <span className="text-text-primary">{STATUS_LABEL[p.payload.status] ?? p.payload.status}</span>
-              </li>
-            ))}
-            {mySettlements.map((s: any) => (
-              <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
-                <span className="text-text-secondary">Settled · {s.payload.reason}</span>
-                <span className="font-mono text-success">paid {s.payload.totalPaidOut}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+        {/* Projects & Settlements list */}
+        <Card title="Projects &amp; Settlements History">
+          {myProjects.length === 0 && mySettlements.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No active projects or settlements yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2 text-[13px]">
+              {myProjects.map((p: any) => (
+                <li key={p.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2">
+                  <span className="text-text-secondary">
+                    Milestone {Number(p.payload.currentIndex) + 1}/{p.payload.milestones.length}
+                  </span>
+                  <span className="text-text-primary font-semibold">{STATUS_LABEL[p.payload.status] ?? p.payload.status}</span>
+                </li>
+              ))}
+              {mySettlements.map((s: any) => (
+                <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
+                  <span className="text-text-secondary font-medium">✅ Settled · {s.payload.reason}</span>
+                  <span className="font-mono text-success font-bold">paid {s.payload.totalPaidOut}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      {/* Right Col: Escrow Vaults live status */}
+      <div className="flex flex-col gap-4 lg:sticky lg:top-20">
+        <Card title="Escrow Vaults State">
+          {vaults.loading ? (
+            <p className="text-[12px] text-text-secondary">Syncing ledger vaults…</p>
+          ) : myVaults.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No active escrow vaults.</p>
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {myVaults.map((v: any) => (
+                <li key={v.contractId} className="flex items-center justify-between rounded-lg border border-white/8 bg-white/[0.01] px-3.5 py-2.5 text-[12.5px]">
+                  <span className="text-text-secondary font-medium">{v.payload.vaultType}</span>
+                  <span className="font-mono text-text-primary font-bold">{v.payload.amount}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* Extra Audit Badge */}
+        <Card title="Secured Vaults">
+          <div className="flex flex-col gap-2 text-[11px] text-text-secondary leading-relaxed">
+            <div className="flex gap-2 items-start">
+              <Award className="h-4 w-4 text-emerald-400 shrink-0" />
+              <p>Escrow balances are programmatically locked in multi-party Canton contracts. Neither party can unilaterally withdraw funds.</p>
+            </div>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

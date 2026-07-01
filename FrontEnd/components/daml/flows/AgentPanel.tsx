@@ -238,56 +238,76 @@ export function AgentPanel() {
       .run(() => session!.ledger.exercise(Vindex.Project.WorkerViolation, cid, { actor: party }))
       .catch(() => undefined);
 
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card title="Disputes — AI Arbitration">
-        {disputed.length === 0 ? (
-          <p className="text-[12px] text-text-secondary">No disputes pending your ruling.</p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {disputed.map((p) => (
-              <DisputeCard
-                key={p.contractId}
-                p={p}
-                onVerdict={verdict}
-                submitting={verdictCmd.phase === "submitting"}
-              />
-            ))}
-          </ul>
-        )}
-        <TxStatus status={verdictCmd} />
-      </Card>
+  const totalVaultValue = vaults.contracts.reduce((sum, v) => sum + Number(v.payload.amount), 0);
 
-      <Card title="Enforcement (deadline violations)">
-        {open.length === 0 ? (
-          <p className="text-[12px] text-text-secondary">No open milestones to enforce.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {open.map((p) => (
-              <li key={p.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2 text-[13px]">
-                <span className="text-text-secondary">
-                  M{Number(p.payload.currentIndex) + 1} · {STATUS_LABEL[p.payload.status] ?? p.payload.status}
-                </span>
-                <Button size="sm" variant="outline" onClick={() => enforce(p.contractId)}>
-                  Trigger worker violation
-                </Button>
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Agent Stats Summary Bar */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="glass rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Pending Disputes</span>
+          <span className="font-mono text-xl font-bold text-sky-400">{disputed.length}</span>
+        </div>
+        <div className="glass rounded-xl border border-violet-500/20 bg-violet-500/5 p-4 flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Open Projects</span>
+          <span className="font-mono text-xl font-bold text-violet-400">{open.length}</span>
+        </div>
+        <div className="glass rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex flex-col gap-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Secured Escrows</span>
+          <span className="font-mono text-xl font-bold text-emerald-400">{totalVaultValue}</span>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Disputes — AI Arbitration">
+          {disputed.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No disputes pending your ruling.</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {disputed.map((p) => (
+                <DisputeCard
+                  key={p.contractId}
+                  p={p}
+                  onVerdict={verdict}
+                  submitting={verdictCmd.phase === "submitting"}
+                />
+              ))}
+            </ul>
+          )}
+          <TxStatus status={verdictCmd} />
+        </Card>
+
+        <Card title="Enforcement (deadline violations)">
+          {open.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No open milestones to enforce.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {open.map((p) => (
+                <li key={p.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2 text-[13px]">
+                  <span className="text-text-secondary">
+                    M{Number(p.payload.currentIndex) + 1} · {STATUS_LABEL[p.payload.status] ?? p.payload.status}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => enforce(p.contractId)}>
+                    Trigger worker violation
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <TxStatus status={enforceCmd} />
+        </Card>
+
+        <Card title="Vault State (live)">
+          <ul className="flex flex-col gap-2 text-[13px]">
+            {vaults.contracts.map((v) => (
+              <li key={v.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2">
+                <span className="text-text-secondary">{v.payload.vaultType}</span>
+                <span className="font-mono text-text-primary">{v.payload.amount}</span>
               </li>
             ))}
           </ul>
-        )}
-        <TxStatus status={enforceCmd} />
-      </Card>
-
-      <Card title="Vault State (live)">
-        <ul className="flex flex-col gap-2 text-[13px]">
-          {vaults.contracts.map((v) => (
-            <li key={v.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2">
-              <span className="text-text-secondary">{v.payload.vaultType}</span>
-              <span className="font-mono text-text-primary">{v.payload.amount}</span>
-            </li>
-          ))}
-        </ul>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

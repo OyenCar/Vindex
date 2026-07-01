@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { DamlProvider, useDaml } from "@/components/daml/DamlProvider";
 import { AnimatedBackground } from "@/components/AnimatedBackground";
 import { cn } from "@/lib/utils";
-import { Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff, LogOut } from "lucide-react";
 
 const NAV_LINKS = [
   { href: "/app", label: "Console" },
@@ -30,7 +30,7 @@ function Mark() {
 
 function NavContent() {
   const pathname = usePathname();
-  const { session, online } = useDaml();
+  const { session, online, disconnect } = useDaml();
 
   function shorten(p: string) {
     return p.length > 20 ? `${p.slice(0, 10)}…${p.slice(-6)}` : p;
@@ -116,6 +116,14 @@ function NavContent() {
               >
                 {shorten(session.party)}
               </span>
+              {/* Disconnect button */}
+              <button
+                onClick={disconnect}
+                className="flex items-center gap-1 h-7 px-2.5 rounded-full border border-white/10 bg-white/[0.02] text-[11px] font-medium text-text-secondary hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 transition-colors cursor-pointer shrink-0"
+              >
+                <LogOut className="h-3 w-3" />
+                Disconnect
+              </button>
             </div>
           </>
         )}
