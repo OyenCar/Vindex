@@ -78,34 +78,14 @@ function Dapp() {
 
   return (
     <main className="relative mx-auto min-h-screen w-full max-w-shell px-5 py-8 sm:px-8">
-      {/* Page title */}
-      <header className="mb-6">
-        <h1
-          className="font-display font-black tracking-tightest text-text-primary"
-          style={{ fontSize: "clamp(1.7rem, 3.5vw, 2.5rem)", lineHeight: 1.05 }}
-        >
-          Protocol <span className="text-gradient-animated">Console</span>
-        </h1>
-        <p className="mt-2 max-w-xl text-[14px] text-text-secondary">
-          Connect as an Investor, Worker, or AI Agent. Every action runs a real Daml command on the
-          participant — every panel streams live from the ledger.
-        </p>
-      </header>
-
       {/* Party connect widget */}
       <div className="mb-6 max-w-md">
         <PartyConnect />
       </div>
 
       {!session ? (
-        <div className="glass max-w-2xl rounded-2xl p-6">
-          <h2 className="mb-2 text-lg font-semibold">Connect a party to begin</h2>
-          <p className="text-sm text-text-secondary">
-            Authenticate as an Investor, Worker, or AI Agent party. Every action below executes a
-            real <span className="text-text-primary">create</span> or{" "}
-            <span className="text-text-primary">exercise</span> command against the deployed Vindex
-            Daml contracts on the participant, and all dashboards stream live from the ledger.
-          </p>
+        <div className="glass max-w-sm rounded-2xl p-5">
+          <p className="text-sm text-text-secondary">Select a role and enter your party ID above to get started.</p>
         </div>
       ) : (
         <ErrorBoundary>
