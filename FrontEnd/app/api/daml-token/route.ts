@@ -70,12 +70,20 @@ export async function POST(req: NextRequest) {
   const secret = process.env.DAML_JWT_SECRET ?? "secret";
   const ledgerId = process.env.DAML_LEDGER_ID ?? "sandbox";
   const header = { alg: "HS256", typ: "JWT" };
+  const getRole = (p: string) => p.split("::")[0];
+  const role = getRole(party);
+  const isAuthorizedRole = role === "Worker" || role === "Investor" || role === "Agent";
+  const publicParty = process.env.NEXT_PUBLIC_PARTY_PUBLIC ?? "";
+  const readAs = [party];
+  if (isAuthorizedRole && publicParty && !readAs.includes(publicParty)) {
+    readAs.push(publicParty);
+  }
   const payload = {
     "https://daml.com/ledger-api": {
       ledgerId,
       applicationId: "Vindex",
       actAs: [party],
-      readAs: [party],
+      readAs,
     },
     exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
   };

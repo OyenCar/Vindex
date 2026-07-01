@@ -40,7 +40,7 @@ const item: Variants = {
 
 export function Hero() {
   return (
-    <section className="relative mx-auto flex min-h-screen w-full max-w-shell flex-col px-5 pb-20 pt-32 sm:px-8 lg:pt-36">
+    <section className="relative mx-auto flex min-h-screen w-full max-w-shell flex-col px-5 pb-20 pt-20 sm:px-8 lg:pt-24">
       <div className="grid flex-1 items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:gap-10">
         {/* Left — copy */}
         <motion.div

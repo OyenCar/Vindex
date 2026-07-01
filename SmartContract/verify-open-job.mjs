@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_FILE = path.resolve(__dirname, "../FrontEnd/.env.local");
 
 // vindex package id (from the generated bindings; bump after any contract change).
-const PKG = "78307962a34e50d896432d9ae539640e68e0853fdc5665a6daf5af7fed31b530";
+const PKG = "29513a7ac78bcd183b9445d7602992a6cfd7a9ad62ae03207611ee3c38d74167";
 const tpl = (entity) => `${PKG}:Vindex:${entity}`;
 
 // ---- read config from .env.local --------------------------------------------
@@ -48,12 +48,15 @@ if (!INVESTOR || !WORKER || !AGENT) {
 const b64url = (s) => Buffer.from(s).toString("base64url");
 function mintToken(party) {
   const header = { alg: "HS256", typ: "JWT" };
+  const PUBLIC = env.NEXT_PUBLIC_PARTY_PUBLIC;
+  const readAs = [party];
+  if (PUBLIC) readAs.push(PUBLIC);
   const payload = {
     "https://daml.com/ledger-api": {
       ledgerId: LEDGER_ID,
       applicationId: "Vindex-verify",
       actAs: [party],
-      readAs: [party],
+      readAs,
     },
     exp: Math.floor(Date.now() / 1000) + 3600,
   };
@@ -112,15 +115,18 @@ async function main() {
     });
     created.push({ party: INVESTOR, entity: "InvestorParty", cid: ip.contractId });
 
-    console.log("2. Investor publishes an OPEN posting (workerPool = [Worker]) ...");
+    console.log("2. Investor publishes an OPEN posting (recruitmentMode = OPEN_POOL) ...");
     const post = await exercise(INVESTOR, "InvestorParty", ip.contractId, "SetupAndPost", {
+      postingId: "job-open-verify-" + Date.now(),
       requirements: "VERIFY: open-job visibility check",
       briefUri: "",
       budgetAmount: "4000.0",
       agentFeeAmount: "300.0",
       agentOpCost: "50.0",
       commitmentRequired: "500.0",
-      workerPool: [WORKER],
+      recruitmentMode: "OPEN_POOL",
+      eligibleWorkers: ["Worker::*"],
+      publicParty: env.NEXT_PUBLIC_PARTY_PUBLIC,
     });
     // exerciseResult is a Tuple3 { _1: postingCid, _2: budgetCid, _3: agentFeeCid }
     const r = post.exerciseResult;

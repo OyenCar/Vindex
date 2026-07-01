@@ -21,6 +21,7 @@
 module Vindex where
 
 import DA.Time (RelTime, addRelTime)
+import qualified DA.Text as T
 
 -- ---------------------------------------------------------------------------
 -- Enumerations and value types
@@ -266,17 +267,42 @@ template InvestorParty
     nonconsuming choice SetupAndPost
         : (ContractId ProjectPosting, ContractId AssetVault, ContractId AssetVault)
       with
+        postingId : Text
         requirements : Text
         briefUri : Text            -- ^ IPFS CID of the off-ledger project brief/files ("" if none)
         budgetAmount : Decimal     -- ^ budget ENVELOPE (cap); the approved plan must fit within it
         agentFeeAmount : Decimal
         agentOpCost : Decimal
         commitmentRequired : Decimal  -- ^ worker stake the investor requires
-        workerPool : [Party]       -- ^ registered workers who can see & apply (the open audience)
+        recruitmentMode : Text
+        eligibleWorkers : [Text]
+        publicParty : Party
       controller admin
       do
         assertMsg "budget envelope must be positive" (budgetAmount > 0.0)
-        let stake = members ++ (agent :: workerPool)
+        assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY" 
+          (recruitmentMode == "OPEN_POOL" || recruitmentMode == "INVITE_ONLY")
+          
+        if recruitmentMode == "OPEN_POOL" then do
+          assertMsg "OPEN_POOL eligibleWorkers must be exactly ['Worker::*']" 
+            (eligibleWorkers == ["Worker::*"])
+        else do
+          assertMsg "INVITE_ONLY cannot use wildcard Worker::*" 
+            ("Worker::*" `notElem` eligibleWorkers)
+          let validParties = concatMap (\t -> case partyFromText t of Some p -> [p]; None -> []) eligibleWorkers
+          assertMsg "Some eligible workers are not valid party IDs" 
+            (length validParties == length eligibleWorkers)
+
+        let resolveParty (t : Text) : [Party] =
+              if t == "Worker::*" then
+                [publicParty]
+              else
+                case partyFromText t of
+                  Some p -> [p]
+                  None -> []
+        let resolvedWorkers = concatMap resolveParty eligibleWorkers
+        let stake = members ++ (agent :: resolvedWorkers)
+        
         -- MONEY MOVEMENT: create the Budget Vault (funder side = Investor Party members).
         budget <- create AssetVault with
           vaultType = BudgetV
@@ -290,6 +316,7 @@ template InvestorParty
           stakeholders = stake
           amount = agentFeeAmount
         posting <- create ProjectPosting with
+          postingId
           investorPartyCid = self
           members
           contributions
@@ -301,7 +328,9 @@ template InvestorParty
           agentFeeVault = agentFee
           agentOpCost
           commitmentRequired
-          workerPool
+          recruitmentMode
+          eligibleWorkers
+          publicParty
         pure (posting, budget, agentFee)
 
 -- | Propose-accept join flow. The invitee must explicitly accept to become a signatory.
@@ -352,12 +381,17 @@ template Application
     presentationUri : Text    -- ^ IPFS CID of the off-ledger portfolio/presentation ("" if none)
     contactLink : Text        -- ^ visible to this contract's observers only
     postingCid : ContractId ProjectPosting
+    postingId : Text
   where
     signatory applicant
     observer members
 
+    key (applicant, postingId) : (Party, Text)
+    maintainer key._1
+
 template ProjectPosting
   with
+    postingId : Text
     investorPartyCid : ContractId InvestorParty
     members : [Party]
     contributions : [Contribution]
@@ -369,10 +403,19 @@ template ProjectPosting
     agentFeeVault : ContractId AssetVault
     agentOpCost : Decimal
     commitmentRequired : Decimal
-    workerPool : [Party]          -- ^ registered workers who can see & apply (the open audience)
+    recruitmentMode : Text        -- ^ "OPEN_POOL" or "INVITE_ONLY"
+    eligibleWorkers : [Text]       -- ^ "Worker::*" or explicit party ids
+    publicParty : Party
   where
     signatory members
-    observer (agent :: workerPool)
+    observer (agent :: (let resolveParty (t : Text) : [Party] =
+                              if t == "Worker::*" then
+                                [publicParty]
+                              else
+                                case partyFromText t of
+                                  Some p -> [p]
+                                  None -> []
+                        in concatMap resolveParty eligibleWorkers))
 
     -- A jobseeker applies privately to this open posting. Any worker in the pool may apply;
     -- the investor has NOT pre-selected anyone. (The pool gate is just the Canton visibility
@@ -385,7 +428,24 @@ template ProjectPosting
         contactLink : Text
       controller applicant
       do
-        assertMsg "applicant is not in the worker pool" (applicant `elem` workerPool)
+        let isWorkerParty (p : Party) : Bool =
+              let s = partyToText p
+              in case T.splitOn "::" s of
+                [single] -> T.isPrefixOf "Worker" single
+                displayName :: _ -> displayName == "Worker"
+                [] -> False
+        
+        assertMsg "applicant must be a Worker party" (isWorkerParty applicant)
+        
+        assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY" 
+          (recruitmentMode == "OPEN_POOL" || recruitmentMode == "INVITE_ONLY")
+          
+        if recruitmentMode == "OPEN_POOL" then
+          pure ()
+        else
+          assertMsg "applicant is not in the eligible list" 
+            ((partyToText applicant) `elem` eligibleWorkers)
+        
         create Application with
           members
           applicant
@@ -393,6 +453,7 @@ template ProjectPosting
           presentationUri
           contactLink
           postingCid = self
+          postingId
 
     -- GOVERNANCE-GATED (locked decision 2/4): worker selection is a discretionary vote. Instead of
     -- a finished contract, this opens a PLANNING MANDATE: the selected worker authors the milestone
@@ -427,6 +488,25 @@ template ProjectPosting
           agentFeeVault
           agentOpCost
           commitmentRequired
+
+    choice EditPostingDescription : ContractId ProjectPosting
+      with
+        actor : Party
+        newRequirements : Text
+      controller actor
+      do
+        assertMsg "actor must be a member" (actor `elem` members)
+        create this with requirements = newRequirements
+
+    choice TakeDownPosting : ()
+      with
+        actor : Party
+      controller actor
+      do
+        assertMsg "actor must be a member" (actor `elem` members)
+        _ <- exercise budgetVault Settle
+        _ <- exercise agentFeeVault Settle
+        pure ()
 
 -- ---------------------------------------------------------------------------
 -- Reusable governance proposal (one vote per member per cycle)
@@ -665,6 +745,19 @@ template WorkPlan
           agentFeeVault
           agentOpCost
           commitmentRequired
+
+    -- Choice for worker to update/re-submit their plan, replacing the old one.
+    choice ProposePlanAgain : ContractId WorkPlan
+      with
+        newMilestones : [MilestoneSpec]
+        newMaxSubmissions : Int
+      controller worker
+      do
+        assertMsg "plan must have at least one milestone" (not (null newMilestones))
+        assertMsg "max submissions must be positive" (newMaxSubmissions > 0)
+        create this with
+          milestones = newMilestones
+          maxSubmissions = newMaxSubmissions
 
 -- | On completion or stop, an immutable settlement record (lets tests assert the money
 --   invariant after the `Project` is gone).

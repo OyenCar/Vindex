@@ -127,7 +127,7 @@ export function SystemLayers() {
     refs.current[i]?.scrollIntoView({ behavior: "smooth", block: "center" });
 
   return (
-    <section id="system" className="relative mx-auto w-full max-w-shell px-5 py-24 sm:px-8 lg:py-32">
+    <section id="system" className="relative mx-auto w-full max-w-shell px-5 py-16 sm:px-8 lg:py-20">
       {/* Heading */}
       <div className="max-w-2xl">
         <span className="glass inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium text-text-primary">

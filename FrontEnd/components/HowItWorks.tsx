@@ -53,7 +53,7 @@ const STEPS: Step[] = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="relative mx-auto w-full max-w-shell px-5 py-24 sm:px-8 lg:py-32">
+    <section id="how-it-works" className="relative mx-auto w-full max-w-shell px-5 py-16 sm:px-8 lg:py-20">
       <div className="max-w-2xl">
         <span className="glass inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium text-text-primary">
           <Route className="h-3.5 w-3.5 text-accent-soft" />
