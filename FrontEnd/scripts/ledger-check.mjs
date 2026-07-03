@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 
 const party = process.argv[2];
 const ledgerId = process.argv[3] ?? "sandbox";
-const pkg = "6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0";
+const pkg = "29513a7ac78bcd183b9445d7602992a6cfd7a9ad62ae03207611ee3c38d74167";
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const header = { alg: "HS256", typ: "JWT" };

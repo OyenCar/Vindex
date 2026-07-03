@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Groq } from 'groq-sdk';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -26,7 +27,7 @@ function readEnv() {
 }
 const env = readEnv();
 const KEY = env.GEMINI_API_KEY || env.OPENROUTER_API_KEY;
-const MODEL = env.GEMINI_MODEL || "gemini-1.5-flash";
+const MODEL = env.GROQ_MODEL || "gemini-1.5-flash";
 if (!KEY) {
   console.error("GEMINI_API_KEY is not set in FrontEnd/.env.local");
   process.exit(1);
@@ -134,100 +135,113 @@ function extractJson(raw) {
 }
 
 let raw = "";
-let apiUsed = "Google Gemini (Direct)";
+// let apiUsed = "Google Gemini (Direct)";
 
-// 1. Try native Google Gemini API first
-if (KEY && KEY !== "undefined") {
-  try {
-    console.log(`Model: ${MODEL}\nCalling Google Gemini (Direct) ...`);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
+// // 1. Try native Google Gemini API first
+// if (KEY && KEY !== "undefined") {
+//   try {
+//     console.log(`Model: ${MODEL}\nCalling Google Gemini (Direct) ...`);
+//     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
     
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 seconds timeout
+//     const controller = new AbortController();
+//     const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 seconds timeout
     
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: url_content }],
-          },
-        ],
-        systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }],
-        },
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
-      }),
-    });
+//     const res = await fetch(url, {
+//       method: "POST",
+//       headers: { "content-type": "application/json" },
+//       signal: controller.signal,
+//       body: JSON.stringify({
+//         contents: [
+//           {
+//             role: "user",
+//             parts: [{ text: url_content }],
+//           },
+//         ],
+//         systemInstruction: {
+//           parts: [{ text: SYSTEM_PROMPT }],
+//         },
+//         generationConfig: {
+//           responseMimeType: "application/json",
+//         },
+//       }),
+//     });
     
-    clearTimeout(timeoutId);
+//     clearTimeout(timeoutId);
     
-    if (res.ok) {
-      const data = await res.json();
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        raw = data.candidates[0].content.parts[0].text;
-      }
-    } else {
-      console.warn(`Direct Gemini API returned HTTP ${res.status}, trying OpenRouter fallback...`);
-    }
-  } catch (e) {
-    console.warn("Direct Gemini API fetch failed, trying OpenRouter fallback...");
-  }
-}
+//     if (res.ok) {
+//       const data = await res.json();
+//       if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+//         raw = data.candidates[0].content.parts[0].text;
+//       }
+//     } else {
+//       console.warn(`Direct Gemini API returned HTTP ${res.status}, trying OpenRouter fallback...`);
+//     }
+//   } catch (e) {
+//     console.warn("Direct Gemini API fetch failed, trying OpenRouter fallback...");
+//   }
+// }
 
 // 2. Fall back to OpenRouter
 if (!raw) {
-  const openrouterKey = env.OPENROUTER_API_KEY;
-  if (!openrouterKey) {
-    console.error("Direct Gemini call failed and no OPENROUTER_API_KEY is available in .env.local.");
+  const groqKey = env.GROQ_API_KEY;
+  if (!groqKey) {
+    console.error("Direct Gemini call failed and no GROQ_API_KEY is available in environment variables.");
     process.exit(1);
   }
   
-  let orModel = MODEL;
-  if (!orModel.includes("/")) {
-    if (orModel.includes("gemini")) {
-      orModel = `google/${orModel}`;
+  // Translate or enforce a valid Groq model name
+  let groqModel = MODEL;
+  console.log(groqKey);
+  if (groqModel.includes("gemini") || !groqModel) {
+    groqModel = "llama-3.3-70b-versatile"; 
+  }
+
+  apiUsed = `Groq (${groqModel})`;
+  console.log(`Calling Groq API (${groqModel}) ...`);
+  
+  try {
+    const groq = new Groq()
+    const res = await groq.chat.completions.message.create({
+      body: JSON.stringify({
+        model: groqModel,
+        max_completion_tokens: 1500,
+        temperature: 1,
+        top_1: 1,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: url_content },
+        ],
+        // Optional: Include this if your system instructions require valid JSON output
+        // response_format: { type: "json_object" } 
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.choices?.[0]?.message?.content) {
+        raw = data.choices[0].message.content;
+      }
     } else {
-      orModel = `google/gemini-flash-1.5`;
+      const errText = await res.text();
+      console.error(`Groq API returned HTTP ${res.status}: ${errText}`);
     }
+  } catch (e) {
+    console.error("Groq API fallback fetch failed entirely:", e);
   }
-
-  apiUsed = `OpenRouter (${orModel})`;
-  console.log(`Calling Gemini via OpenRouter (${orModel}) ...`);
-  
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${openrouterKey}`,
-      "content-type": "application/json",
-      "X-Title": "Vindex",
-    },
-    body: JSON.stringify({
-      model: orModel,
-      max_tokens: 1500,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: url_content },
-      ],
-    }),
-  });
-
-  if (!res.ok) {
-    console.error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    process.exit(1);
-  }
-  const data = await res.json();
-  if (data.error) {
-    console.error(`OpenRouter error: ${data.error.message ?? JSON.stringify(data.error)}`);
-    process.exit(1);
-  }
-  raw = data.choices?.[0]?.message?.content ?? "";
 }
+
+
+//   if (!res.ok) {
+//     console.error(`OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+//     process.exit(1);
+//   }
+//   const data = await res.json();
+//   if (data.error) {
+//     console.error(`OpenRouter error: ${data.error.message ?? JSON.stringify(data.error)}`);
+//     process.exit(1);
+//   }
+//   raw = data.choices?.[0]?.message?.content ?? "";
+// }
 
 console.log(`Using API: ${apiUsed}\n`);
 

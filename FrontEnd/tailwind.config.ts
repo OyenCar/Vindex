@@ -10,68 +10,52 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0B1020",
-        surface: "#121A2B",
+        background: "var(--bg)",
+        "bg-secondary": "var(--bg-secondary)",
+        surface: "var(--surface)",
+        "surface-hover": "var(--surface-hover)",
         text: {
-          primary: "#F8FAFC",
-          secondary: "#94A3B8",
+          primary: "var(--text-primary)",
+          secondary: "var(--text-secondary)",
+          muted: "var(--text-muted)",
         },
         accent: {
-          DEFAULT: "#7C3AED",
-          glow: "rgba(124,58,237,0.35)",
-          soft: "#A78BFA",
+          DEFAULT: "var(--accent)",
+          muted: "var(--accent-muted)",
+          soft: "var(--accent-soft)",
         },
-        success: "#10B981",
-        warning: "#F59E0B",
+        success: "var(--success)",
+        warning: "var(--warning)",
+        danger: "var(--danger)",
+        border: "var(--border)",
+        "border-light": "var(--border-light)",
       },
       fontFamily: {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        display: [
-          "var(--font-display)",
-          "var(--font-inter)",
-          "Helvetica Neue",
-          "Arial",
-          "sans-serif",
-        ],
-      },
-      letterSpacing: {
-        tightest: "-0.045em",
+        display: ["var(--font-display)", "var(--font-inter)", "Helvetica Neue", "Arial", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "SF Mono", "monospace"],
       },
       maxWidth: {
         shell: "1280px",
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(124,58,237,0.25), 0 18px 60px -18px rgba(124,58,237,0.55)",
-        "glow-sm": "0 0 30px -6px rgba(124,58,237,0.5)",
-        card: "0 1px 0 0 rgba(255,255,255,0.04) inset, 0 24px 70px -30px rgba(0,0,0,0.85)",
+        brutal: "var(--shadow-brutal)",
+        "brutal-sm": "var(--shadow-brutal-sm)",
+        "brutal-hover": "var(--shadow-brutal-hover)",
       },
       keyframes: {
-        "gradient-x": {
-          "0%, 100%": { backgroundPosition: "0% 50%" },
-          "50%": { backgroundPosition: "100% 50%" },
-        },
-        float: {
-          "0%, 100%": { transform: "translateY(0px)" },
-          "50%": { transform: "translateY(-12px)" },
-        },
-        "glow-pulse": {
-          "0%, 100%": { opacity: "0.45", transform: "scale(1)" },
-          "50%": { opacity: "1", transform: "scale(1.04)" },
-        },
-        "flow-dash": {
-          to: { strokeDashoffset: "-240" },
-        },
         "fade-up": {
           from: { opacity: "0", transform: "translateY(14px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "slide-in": {
+          from: { opacity: "0", transform: "translateX(-8px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
       },
       animation: {
-        "gradient-x": "gradient-x 6s ease infinite",
-        float: "float 7s ease-in-out infinite",
-        "glow-pulse": "glow-pulse 4s ease-in-out infinite",
-        "flow-dash": "flow-dash 3s linear infinite",
-        "fade-up": "fade-up 0.7s cubic-bezier(0.22,1,0.36,1) both",
+        "fade-up": "fade-up 0.4s ease-out both",
+        "slide-in": "slide-in 0.3s ease-out both",
       },
     },
   },

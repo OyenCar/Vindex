@@ -1,30 +1,44 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { DamlProvider, useDaml } from "@/components/daml/DamlProvider";
 import { AnimatedBackground } from "@/components/AnimatedBackground";
 import { cn } from "@/lib/utils";
-import { Wifi, WifiOff, LogOut } from "lucide-react";
+import { Wifi, WifiOff, LogOut, Sun, Moon } from "lucide-react";
 
 const NAV_LINKS = [
   { href: "/app", label: "Console" },
   { href: "/app/explorer", label: "Explorer" },
 ];
 
-function Mark() {
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("vindex-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = saved ? saved === "dark" : prefersDark;
+    setDark(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, []);
+
+  const toggle = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("vindex-theme", next ? "dark" : "light");
+  };
+
   return (
-    <svg viewBox="0 0 32 32" className="h-7 w-7" fill="none" aria-hidden>
-      <rect width="32" height="32" rx="9" fill="url(#navmark)" />
-      <path d="M9 11.5 L16 22 L23 11.5" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="16" cy="9.5" r="1.7" fill="white" />
-      <defs>
-        <linearGradient id="navmark" x1="0" y1="0" x2="32" y2="32">
-          <stop stopColor="#8B5CF6" />
-          <stop offset="1" stopColor="#6D28D9" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <button
+      onClick={toggle}
+      className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border-light)] bg-[var(--surface)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors shadow-sm"
+      aria-label="Toggle theme"
+    >
+      {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
   );
 }
 
@@ -36,32 +50,28 @@ function NavContent() {
     return p.length > 20 ? `${p.slice(0, 10)}…${p.slice(-6)}` : p;
   }
 
-  const roleColor: Record<string, string> = {
-    investor: "text-violet-400 bg-violet-500/10 border-violet-500/25",
-    worker: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
-    agent: "text-sky-400 bg-sky-500/10 border-sky-500/25",
-  };
-
   return (
-    <nav className="sticky top-0 z-40 border-b border-white/[0.06] bg-background/70 backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-shell items-center gap-1 px-5 py-2.5 sm:px-8">
+    <div className="sticky top-0 z-40 w-full px-4 pt-4">
+      <nav className="mx-auto flex w-full max-w-shell items-center gap-2 rounded-full px-6 py-2.5 glass-strong shadow-lg border border-[var(--border-light)]">
         {/* Logo */}
         <Link href="/" className="mr-4 flex shrink-0 items-center gap-2">
-          <Mark />
-          <span className="text-[15px] font-semibold tracking-tight">Vindex</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--border-light)] bg-[var(--accent)] shadow-sm">
+            <span className="text-sm font-black text-white font-display">V</span>
+          </div>
+          <span className="text-[15px] font-black tracking-tight font-display uppercase">Vindex</span>
         </Link>
 
         {/* Tab Nav */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-full border border-[var(--border-light)]">
           {NAV_LINKS.map((t) => (
             <Link
               key={t.href}
               href={t.href}
               className={cn(
-                "rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors",
+                "px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 rounded-full",
                 pathname === t.href
-                  ? "bg-accent/15 text-accent-soft"
-                  : "text-text-secondary hover:text-text-primary",
+                  ? "bg-[var(--accent)] text-white shadow-sm"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
               )}
             >
               {t.label}
@@ -75,43 +85,41 @@ function NavContent() {
         {/* Server status */}
         <div
           className={cn(
-            "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+            "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-colors shadow-sm",
             online
-              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-400"
-              : "border-white/10 bg-white/[0.04] text-text-secondary",
+              ? "bg-[var(--success)] text-white border-transparent"
+              : "bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border-light)]",
           )}
         >
           {online ? (
             <>
               <Wifi className="h-3 w-3" />
-              <span className="hidden sm:inline">Canton Online</span>
-              <span className="sm:hidden">Live</span>
+              <span className="hidden sm:inline">CANTON LIVE</span>
+              <span className="sm:hidden">LIVE</span>
             </>
           ) : (
             <>
-              <WifiOff className="h-3 w-3" />
-              <span className="hidden sm:inline">Connecting…</span>
+              <WifiOff className="h-3 w-3 animate-pulse" />
+              <span className="hidden sm:inline">CONNECTING…</span>
             </>
           )}
         </div>
 
+        {/* Theme toggle */}
+        <ThemeToggle />
+
         {/* User info — only shown when connected */}
         {session && (
           <>
-            <span className="mx-2 h-4 w-px shrink-0 bg-white/10" />
+            <span className="mx-1 h-5 w-px shrink-0 bg-[var(--border-light)]" />
             <div className="flex shrink-0 items-center gap-2">
               {/* Role badge */}
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize",
-                  roleColor[session.role] ?? "border-white/10 bg-white/[0.04] text-text-secondary",
-                )}
-              >
+              <span className="inline-flex items-center px-3 py-1 rounded-full border border-[var(--border-light)] bg-[var(--accent)] text-white text-[10px] font-bold uppercase tracking-wider shadow-sm">
                 {session.role}
               </span>
               {/* Truncated party address */}
               <span
-                className="hidden font-mono text-[12px] text-text-secondary sm:block"
+                className="hidden font-mono text-[11px] text-[var(--text-muted)] sm:block"
                 title={session.party}
               >
                 {shorten(session.party)}
@@ -119,16 +127,16 @@ function NavContent() {
               {/* Disconnect button */}
               <button
                 onClick={disconnect}
-                className="flex items-center gap-1 h-7 px-2.5 rounded-full border border-white/10 bg-white/[0.02] text-[11px] font-medium text-text-secondary hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 transition-colors cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 h-8 px-3.5 rounded-full border border-[var(--border-light)] bg-[var(--surface)] text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:bg-[var(--danger)] hover:text-white hover:border-transparent transition-all duration-200 cursor-pointer shrink-0 shadow-sm"
               >
                 <LogOut className="h-3 w-3" />
-                Disconnect
+                Exit
               </button>
             </div>
           </>
         )}
-      </div>
-    </nav>
+      </nav>
+    </div>
   );
 }
 

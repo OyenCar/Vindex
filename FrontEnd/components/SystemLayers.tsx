@@ -158,12 +158,12 @@ export function SystemLayers() {
                   key={l.name}
                   onClick={() => jump(i)}
                   className={`group flex items-center gap-3 rounded-xl px-3.5 py-3 text-left transition-all ${
-                    on ? "glass" : "hover:bg-white/[0.03]"
+                    on ? "glass" : "hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
                   }`}
                 >
                   <span
                     className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors ${
-                      on ? "bg-accent/20 text-accent-soft" : "bg-white/[0.04] text-text-secondary"
+                      on ? "bg-accent/20 text-accent-soft" : "bg-black/[0.03] dark:bg-white/[0.04] text-text-secondary"
                     }`}
                   >
                     <l.icon className="h-4 w-4" />
@@ -214,7 +214,7 @@ export function SystemLayers() {
                   {l.stat.map((s) => (
                     <div
                       key={s.k}
-                      className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-center"
+                      className="rounded-xl border border-[var(--border-light)] bg-black/[0.02] dark:bg-white/[0.02] px-3 py-2 text-center"
                     >
                       <div className="text-[13px] font-semibold text-text-primary">{s.v}</div>
                       <div className="text-[10px] uppercase tracking-wide text-text-secondary">{s.k}</div>

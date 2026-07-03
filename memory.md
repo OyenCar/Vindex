@@ -5,9 +5,15 @@
 > `agent.md` and immediately understand what Vindex is, how it works, its current status, the
 > remaining work, the architecture decisions, and how to continue development.
 >
-> **Last full audit:** 2026-06-20.
-> **Repository root:** `G:\web3\Hackathon\CantonEncode`
+> **Last full audit:** 2026-07-03 (frontend state-sync + AI-arbitration deep audit — see §13).
+> **Prior audit:** 2026-06-20.
+> **Repository root:** `D:\code progression\web3'\hackathon\Vindex` (SINGLE git repo at root).
 > **Companion file:** `agent.md` (execution guide, TODOs, demo-readiness tracking).
+>
+> ⚠️ Sections §0–§12 below were largely written on 2026-06-20 and have DRIFTED. Ground-truth
+> corrections (repo layout, package id, toolchain, dev script, templates, AI) are inline where
+> critical; the authoritative CURRENT state + the 2026-07-03 audit findings are in **§13**. When
+> §0–§12 conflict with §13, **§13 wins**.
 
 ---
 
@@ -15,91 +21,65 @@
 
 ### 0.1 Product name vs. package name
 
-- **Product / brand name: "Vindex"** — used by the frontend, marketing/landing page, and all
-  user-facing copy.
-- **Daml package / module name: "Vindex"** — the on-ledger Daml package is named `vindex`
-  (version `0.1.0`), the module is `Vindex`, and all templates live under `Vindex:*`.
-- This split is intentional but is a known naming inconsistency (the protocol was originally
-  prototyped as "Vindex" and the product rebranded to "Vindex"). When reading Daml code you will
-  see `Vindex`; when reading the frontend you will see `Vindex`. They are the same protocol.
+- **Product / brand name: "Vindex"** (also spelled "Verdix" in some newer UI copy) — used by the
+  frontend, marketing/landing page, and all user-facing copy.
+- **Daml package / module name: "vindex"** — on-ledger Daml package `vindex` (version `0.1.0`),
+  module `Vindex`, all templates under `Vindex:*`. Brand and package now match; the earlier
+  "Vindex vs Vindex" split note was a stale artifact.
 
 ### 0.2 Two-project monorepo (no top-level git)
 
 ```
-G:\web3\Hackathon\CantonEncode\
+D:\code progression\web3'\hackathon\Vindex\   (SINGLE git repo at root)
 ├── memory.md                      # THIS FILE — project long-term memory
-├── agent.md                       # execution guide for future agents
-├── Vindex\                        # Daml smart-contract project (has its OWN .git)
-│   ├── daml.yaml                  # SDK 2.9.4, name vindex, version 0.1.0
-│   ├── daml\
-│   │   ├── Vindex.daml            # ALL templates + helpers (~810 lines)
-│   │   └── Vindex\Test.daml       # Daml Script test suite (8 scripts)
-│   ├── docs\STATE_MACHINE.md      # mermaid state + sequence diagrams + transition table
-│   ├── README.md                  # protocol architecture, governance, privacy, locked decisions
-│   ├── AGENTS.md                  # Daml-side agent guidance (invariants, gotchas)
-│   ├── LICENSE
-│   ├── .daml\dist\vindex-0.1.0.dar  # compiled DAR (build artifact)
-│   └── log\canton.log, canton_errors.log  # sandbox run artifacts (safe to delete)
-└── Vindex-web\                    # Next.js frontend + Canton integration (NO git)
-    ├── package.json               # Next 14.2.35, @daml/ledger 2.9.4, @daml/types 2.9.4
-    ├── next.config.mjs            # /ledger/* → :7575 proxy (CORS fix)
-    ├── tailwind.config.ts, postcss.config.mjs, tsconfig.json
-    ├── .env.local                 # LIVE local config (ledger URLs + real party ids)
-    ├── .env.local.example         # hosted-participant template
-    ├── daml.js\                   # GENERATED TypeScript bindings from the DAR (real types)
-    │   └── vindex-0.1.0\          # → npm package @daml.js/vindex-0.1.0
+├── SmartContract\                 # Daml project  (WAS "Vindex\")
+│   ├── daml.yaml                  # SDK 2.9.4, name vindex, 0.1.0, init-script Vindex.Test:setup
+│   ├── daml\Vindex.daml           # ALL 11 templates + helpers (~1040 lines)
+│   ├── daml\Vindex\Test.daml      # Daml Script test suite (12 scripts)
+│   ├── seed.ps1                   # upload DAR + allocate Investor/Worker/Agent/Public + WRITE
+│   │                              #   FrontEnd\.env.local party ids (run AFTER sandbox ready)
+│   ├── verify-agent.mjs, verify-review.mjs, verify-open-job.mjs, verify-pinata.mjs
+│   └── .daml\dist\vindex-0.1.0.dar
+└── FrontEnd\                      # Next.js dapp  (WAS "Vindex-web\")
+    ├── package.json               # ⚠️ dev script RENAMED → "kevinKontol" (= next dev, PORT 3000).
+    │                              #   `npm run dev` FAILS; use `npm run kevinKontol`.
+    ├── next.config.mjs            # /ledger/* → LEDGER_PROXY_TARGET (:7575) proxy (CORS)
+    ├── .env.local                 # live config: party ids + GROQ/OPENROUTER/GEMINI/PINATA keys
+    ├── daml.js\vindex-0.1.0\      # generated TS bindings → @daml.js/vindex-0.1.0
     ├── app\
-    │   ├── layout.tsx             # root layout (Inter font, metadata)
-    │   ├── page.tsx               # marketing landing (Hero + AnimatedBackground + Navbar)
-    │   ├── globals.css            # design tokens + utilities + keyframes
-    │   ├── api\daml-token\route.ts  # JWT issuance (dev HS256 | hosted OIDC)
-    │   ├── api\daml-party\route.ts  # real Canton party allocation (registration)
-    │   └── app\                   # THE DAPP (Canton-connected)
-    │       ├── layout.tsx         # wraps DamlProvider + tab nav (Console / Explorer)
-    │       ├── page.tsx           # Protocol Console (role-routed panels)
-    │       └── explorer\page.tsx  # Vindex Explorer (live transparency dashboard)
+    │   ├── app\layout.tsx page.tsx  # role-routed console (investor|worker|agent panels)
+    │   ├── app\explorer\page.tsx    # live transparency dashboard
+    │   └── api\{daml-token, daml-party, ipfs-upload, agent-verdict, auto-arbitrate}\route.ts
     ├── components\
-    │   ├── daml\                  # Canton integration UI
-    │   │   ├── DamlProvider.tsx   # session/auth context, auto-reconnect, liveness ping
-    │   │   ├── PartyConnect.tsx   # party login/registration/account mgmt
-    │   │   ├── TxStatus.tsx       # transaction state UI (Canton-honest, no block confirmations)
-    │   │   ├── ErrorBoundary.tsx  # dapp error boundary
-    │   │   └── flows\             # role panels (real create/exercise)
-    │   │       ├── InvestorPanel.tsx
-    │   │       ├── WorkerPanel.tsx
-    │   │       └── AgentPanel.tsx
-    │   ├── ui\button.tsx          # shadcn/ui-style button + buttonVariants
-    │   ├── AnimatedBackground.tsx # marketing: 5-layer animated background
-    │   ├── Navbar.tsx, Hero.tsx, MetricCard.tsx, ProtocolVisualization.tsx, WalletSupport.tsx
-    ├── lib\
-    │   ├── daml\
-    │   │   ├── config.ts          # ledger endpoints, roles, party prefill
-    │   │   ├── ledger.ts          # @daml/ledger client factory + token fetch + pingLedger
-    │   │   ├── useCommand.ts       # command runner: tx phases + retry
-    │   │   ├── useStreamQueries.ts # live websocket subscription hook
-    │   │   └── vindex.ts          # re-exports generated bindings + helpers (relTime, num, labels)
-    │   └── utils.ts               # cn() class merge
-    ├── scripts\
-    │   ├── ledger-check.mjs       # HTTP connectivity check (mints JWT, queries JSON API)
-    │   └── seed-and-verify.cjs    # @daml/ledger create+query round-trip (Node)
-    ├── README.md                  # frontend README (landing-page focused, partly outdated)
-    ├── COMPLETION_REPORT.md       # verification evidence + architecture + flows
-    └── DEMO.md                    # live bring-up + click-through runbook
+    │   ├── daml\ DamlProvider PartyConnect TxStatus StatusBadge FileUpload ErrorBoundary
+    │   ├── daml\flows\ InvestorPanel WorkerPanel AgentPanel(⚠ DEAD — unreachable role)
+    │   └── console\ ConsoleSidebar EarningsWidget LoginHero
+    └── lib\daml\ config ledger useCommand useStreamQueries vindex agent storage
 ```
 
 ### 0.3 Daml package identity (ground truth from codegen)
 
-- Package id (DAR): `6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0`
-- Template ids look like:
-  `6802c370707b6a1c851499e1d7eaf4ce953fff2b4c1d0f64cc624d343b7eedb0:Vindex:InvestorParty`
+- Package id (DAR, CURRENT after v2): `67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5`
+  (hardcoded at `FrontEnd/daml.js/vindex-0.1.0/lib/index.js` `exports.packageId`). Was `29513a7a…`
+  before the v2 agent-fee-removal refactor. Changes on any Daml recompile → must re-run `daml codegen js`.
+- Template ids: `67fbcd23…a32ea5:Vindex:InvestorParty`.
+- **v2 shipped (2026-07-03):** agent fee removed (BYOK arbiter), `Project.agentVerdictDeadline` +
+  `ResolveStalePending` (stale dispute → auto-accept pays worker), `ProjectPosting.maxRevisions`
+  ceiling (default 3, clamps worker plan). `SetupAndPost` returns a 2-tuple. Frontend: BYOK key
+  input, `maxRevisions` input, stale-release button — all wired, `tsc` clean, DAR uploaded live.
 - npm binding package: `@daml.js/vindex-0.1.0` (generated by `daml codegen js`).
+- ⚠️ `PACKAGE_NOT_FOUND(11,…)` at runtime = the DAR isn't uploaded/vetted on the running
+  participant. Cause is almost always: in-memory sandbox restarted → DAR + parties wiped. Fix:
+  re-run `SmartContract\seed.ps1` (upload-dar + allocate-parties), NOT a code change.
 
 ### 0.4 Toolchain ground truth
 
-- **Daml SDK 2.9.4** installed at
-  `C:\Users\Asus\AppData\Roaming\daml\sdk\2.9.4\daml\daml.exe`. **NOT on PATH** — call the full
-  exe path, or add `C:\Users\Asus\AppData\Roaming\daml\bin` to PATH.
-- **Node** v25.x, **npm** v11.x (system).
+- **Daml SDK 2.9.4** at `C:\Users\Lenovo\AppData\Roaming\daml\bin\daml.cmd` (this machine; user
+  "Lenovo", not "Asus"). `seed.ps1` defaults to `$env:APPDATA\daml\bin\daml.cmd`, falls back to
+  `daml` on PATH.
+- **Node** 18+ (system).
+- **Frontend dev script is `kevinKontol`** (`= next dev`), not `dev`. Runs on **port 3000**
+  (docs that say 3939 are stale).
 - A harmless `SDK 3.4.11 has been released!` notice prints on stderr for every `daml` command. In
   PowerShell this trips `NativeCommandError` and makes `$?` false even on success — **always check
   `$LASTEXITCODE`, never `$?`** for daml commands.
@@ -776,15 +756,122 @@ Regenerate TS bindings after any Daml change:
 
 ---
 
-## 12. Live State at Audit Time (2026-06-20)
+## 12. Live State at Audit Time (2026-06-20 — SUPERSEDED, see §13.7)
 
-- Canton sandbox **running** on `:6865` (static time).
-- JSON Ledger API **running** on `:7575`.
-- Next dev server **running** on `:3939`.
-- Allocated parties (this session; ids reset if the sandbox restarts):
-  - `Investor::122006b6fff92355e44e8ba01c8773734f2162ee9dfe4c69e930eb473f28d6cf21b1`
-  - `Worker::122006b6fff92355e44e8ba01c8773734f2162ee9dfe4c69e930eb473f28d6cf21b1`
-  - `Agent::122006b6fff92355e44e8ba01c8773734f2162ee9dfe4c69e930eb473f28d6cf21b1`
-- One `InvestorParty` + Budget/Agent-Fee vaults seeded under the Investor party (visible in the UI).
-- **Note:** the sandbox is in-memory — restarting it resets all contracts and party ids; update
-  `.env.local` `NEXT_PUBLIC_PARTY_*` with freshly allocated ids after a restart.
+- Historical: sandbox `:6865`, JSON API `:7575`, dev server (then `:3939`, now `:3000`).
+- Party namespace this project: `…fd8fe5` (Investor/Worker/Agent/Public share it — same participant).
+- **Note:** the sandbox is in-memory — restarting resets all contracts + party ids. Re-run
+  `seed.ps1` and hard-reload the browser after any restart (see §13.4).
+
+---
+
+## 13. FULL AUDIT — 2026-07-03 (authoritative current state)
+
+This section reflects the codebase as it actually is on 2026-07-03 and OVERRIDES §0–§12 on any
+conflict. Focus of this audit: the open-job/plan flow, the real AI-arbitration pipeline, and
+frontend state-sync.
+
+### 13.1 What changed since 2026-06-20
+
+- **Repo:** now a single git repo at `D:\code progression\web3'\hackathon\Vindex` with
+  `SmartContract\` (Daml) + `FrontEnd\` (Next.js). The old `Vindex\` / `Vindex-web\` split names
+  and the `G:\…CantonEncode` root are gone.
+- **Open-job hiring flow (NEW):** `ProjectProposal` template removed. Hiring is now:
+  `SetupAndPost` (open posting w/ `recruitmentMode` OPEN_POOL | INVITE_ONLY) → Worker `Apply`
+  (private `Application`, `key (applicant, postingId)` prevents double-apply) → investor
+  `SelectWorker` by governance vote → **`PlanningMandate` → `WorkPlan`** (the WORKER drafts the
+  milestone plan; investor approves/rejects) → Worker deposits commitment → `Project` created.
+- **Real AI arbitration (NEW):** the Agent oracle now calls a real LLM. Two server routes (§13.3).
+- **Off-ledger storage (NEW):** briefs + deliverables go to **IPFS via Pinata** (`/api/ipfs-upload`,
+  `lib/daml/storage.ts`). Only the CID/hash is on-ledger. Pinata key WITHOUT `pinFileToIPFS` scope
+  → uploads 403 `NO_SCOPES_FOUND` → app stores a non-retrievable `local-<…>` CID (breaks AI fetch).
+- **UI:** rebuilt around a "Console" (`components/console/*`) + role panels. Investor self-audits
+  each submission (Accept & Release, or Reject → escalate).
+
+### 13.2 Templates (11, current) — delta vs §6.3
+
+`AssetVault, InvestorParty, InvestorInvite, Application, ProjectPosting, GovernanceProposal,
+MilestoneReview, PlanningMandate, WorkPlan, Settlement, Project`.
+- **Added:** `PlanningMandate`, `WorkPlan` (worker-drafted milestone plan; `WorkPlan` choices
+  `ProposePlanAgain`, `WithdrawPlan`, `ApprovePlan`, `RejectPlan`).
+- **Removed:** `ProjectProposal`.
+- **`ProjectPosting`** gained `recruitmentMode`, `eligibleWorkers` (`["Worker::*"]` for OPEN_POOL),
+  `Apply`, `EditPostingDescription`, `TakeDownPosting`, `SelectWorker`. Has **NO contract key** →
+  identical postings can be created infinitely (see §13.5 idempotency).
+- `Project.AgentVerdict(rejectionValid)` unchanged: `false` (rejection UNJUSTIFIED) →
+  `acceptAndAdvance` releases payment + penalty; `true` → `Revision`.
+- Tests: 12 scripts (added `testEditAndTakeDownPosting`, `testProposePlanAgain`,
+  `testDuplicateApplyRejected`, `testDynamicPrefixApply`). `init-script Vindex.Test:setup` is now
+  `pure ()` — starting the sandbox does NOT auto-seed; use `seed.ps1`.
+
+### 13.3 AI arbitration pipeline (the real one)
+
+- **`/api/auto-arbitrate`** — the PRIMARY path. Called by `InvestorPanel.rejectSubmission` on a
+  reject. Runs the LLM AND commits `Project.AgentVerdict` on-ledger server-side (agent token minted
+  in-route via `getAgentToken`). `rejectionValid=false` → payment auto-releases. Returns
+  `{success, verdict, ledgerResponse}`.
+- **`/api/agent-verdict`** — DISPLAY only (no on-ledger commit). Used by the `AiAuditSection`
+  read-only panel.
+- **Providers (both routes):** **Groq is primary** when `GROQ_API_KEY` + `GROQ_MODEL` set (2026-07-03
+  change — auto-arbitrate had no Groq before, used OpenRouter). Falls back OpenRouter → Gemini.
+  `.env.local`: `GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct` (verified live, HTTP 200),
+  `OPENROUTER_MODEL=google/gemma-4-31b-it:free`. Endpoint `https://api.groq.com/openai/v1/…`.
+- **AgentPanel is DEAD CODE:** `PartyConnect.tsx` role selector = investor|worker only; you can
+  never connect as "agent", so `AgentPanel` (rendered only when `role==="agent"`) is unreachable.
+  The Agent is a server-side oracle, not a UI role.
+
+### 13.4 Root operational trap (caused ~90% of "why is it broken" this session)
+
+The sandbox is **in-memory**. Restarting `daml sandbox` wipes ALL contracts (packages + parties
+survive a re-seed). The browser tab does NOT re-sync: it holds a stale WebSocket ACS + a
+localStorage-cached AI verdict → shows GHOST projects/vaults/verdicts that no longer exist
+on-ledger. Symptom: "AI says unjustified but money never releases" — because the contract is gone.
+Every live-ledger query this session returned **0 projects** while the UI showed populated data.
+Fix habit: don't restart the sandbox mid-session; after any restart run `seed.ps1` + hard-reload
+(Ctrl+Shift+R) + clear localStorage. Real fix: give Canton Postgres persistence.
+
+### 13.5 Frontend state-sync flaws (audit findings)
+
+| # | Flaw | File:line | Root cause | Status |
+|---|---|---|---|---|
+| 1 | Stream never cleared stale contracts on WS hard-close → ghost data | `lib/daml/useStreamQueries.ts:49` | `close` didn't reset `contracts` | **FIXED 2026-07-03** (clears on non-clean close) |
+| 2 | localStorage verdict cache never invalidated → shows verdicts for dead projects | `InvestorPanel.tsx:114` | keyed by content, rendered regardless of ledger | OPEN (proposed: gate to live+RejPending) |
+| 3 | "CANTON LIVE" badge lies (green over empty ledger) | `app/app/layout.tsx:89` + `DamlProvider.tsx:84` | bound to HTTP ping, not stream `live` | OPEN |
+| 4 | Auto-reconnect restores stale party unchecked | `DamlProvider.tsx:70` | dev token issued for any string, no party-exists check | OPEN |
+
+### 13.6 Other confirmed bugs / fixes this session
+
+- **Idempotency — infinite duplicate job posts.** `ProjectPosting` has no contract key; `SetupAndPost`
+  never checks for an existing identical posting. **FIXED (client guard):** `InvestorPanel` disables
+  "Fund Vaults & Post Job" when an active posting has identical requirements. **STILL OPEN (ledger):**
+  add `key (postedBy, requirements)` + `lookupByKey` assert in `SetupAndPost` for true enforcement.
+- **Arbitration commit failed silently** — `.catch(()=>undefined)` swallowed ledger errors; AgentPanel
+  path used display-only route + fragile separate exercise. **FIXED:** AgentPanel `run()` now routes
+  through `/api/auto-arbitrate` (AI+commit atomic); investor reject path gained a **paste-deliverable
+  fallback** for `local-` CIDs (`submissionText`), so arbitration works when Pinata didn't pin.
+- **AI Arbitration section pre-ran before any reject.** `AiAuditSection` rendered on every
+  paid/current milestone. **FIXED:** gated to `current && status==="RejPending"`
+  (`InvestorPanel.tsx:982`).
+- **`WorkerPanel` type bug** — `submit(projectCid: string)` passed to `SubmitMilestone` (wants
+  `ContractId<Project>`). **FIXED:** typed `ContractId<Vindex.Project>` end-to-end.
+- **`agent-verdict/route.ts`** had junk `import { Type } from "lucide-react"` + unused `groq-sdk`.
+  **FIXED (removed).**
+- **Milestone-index bug (OPEN):** AI once evaluated "Milestone 3" on a Milestone 1 dispute — the
+  `milestoneIndex`/prompt payload can mismatch. Needs a look at `rejectSubmission`'s index.
+- **Worker submission window is hardcoded** `days(2)` at `WorkerPanel.tsx:766`/`:786` (+ review
+  `hours(24)`). Not investor-configurable; not exposed in UI. `workerDeadline` computed on-ledger
+  at `Vindex.daml:701/951/1011` (`addRelTime now workerWindow`); enforced at submit (`:825`) and
+  `WorkerViolation` (`:914`).
+
+### 13.7 Live state / how to run (2026-07-03)
+
+- Run order: `daml sandbox --static-time --port 6865` (wait "ready") → `SmartContract\.\seed.ps1`
+  (needs `FrontEnd\.env.local` to already exist — it uses `Resolve-Path`, won't create it) →
+  `daml json-api --ledger-host localhost --ledger-port 6865 --http-port 7575 --allow-insecure-tokens`
+  → `FrontEnd> npm run kevinKontol` (port 3000).
+- `.env.local` for local sandbox needs `DAML_AUTH_MODE=dev`, `DAML_JWT_SECRET=secret`,
+  `DAML_LEDGER_ID=sandbox`, plus `GROQ_API_KEY`+`GROQ_MODEL` (both set + verified) and `PINATA_JWT`.
+- At audit time the live ledger was **empty** (0 projects/postings) — the sandbox had been
+  restarted; the UI was showing ghost data (§13.4).
+- Session net: 6 fixes applied, all `tsc --noEmit` clean (0 errors). Pre-existing `WorkerPanel:805`
+  type error fixed as part of this.

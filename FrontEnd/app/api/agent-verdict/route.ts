@@ -135,11 +135,13 @@ function extractJson(raw: string): unknown {
 export async function POST(req: NextRequest) {
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
   const openrouterKey = process.env.OPENROUTER_API_KEY?.trim();
+  const groq = process.env.GROQ_API_KEY?.trim();
 
   // Determine if we should route to OpenRouter or Google Gemini Direct
   const useOpenRouter = MODEL.includes("/") || (openrouterKey && !geminiKey) || (openrouterKey && openrouterKey.startsWith("sk-or-"));
+  const groqModel = process.env.GROQ_MODEL;
 
-  const apiKey = useOpenRouter ? openrouterKey : (geminiKey || openrouterKey);
+  const apiKey = groqModel ? groq : useOpenRouter ? openrouterKey : (geminiKey || openrouterKey);
   if (!apiKey) {
     return NextResponse.json(
       { error: "API key is not set — add GEMINI_API_KEY or OPENROUTER_API_KEY to .env.local." },
@@ -211,7 +213,41 @@ export async function POST(req: NextRequest) {
 
   let aiRaw: string = "";
   try {
-    if (useOpenRouter) {
+    if (groqModel) {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${groq}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: groqModel,
+          max_completion_tokens: 4096, // Diperbaiki: ditambah 's'
+          messages: [ // Diperbaiki: diganti jadi 'messages'
+            { role: "system", content: buildSystemPrompt(msIdx, msTotal) },
+            { role: "user", content: userContent },
+          ],
+        }),
+      });
+
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        return NextResponse.json(
+          { error: `Groq API error (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}` },
+          { status: 502 },
+        );
+      }
+
+      const data = await res.json();
+      if (data.error) {
+        return NextResponse.json({ error: `Groq API: ${data.error.message ?? "unknown error"}` }, { status: 502 });
+      }
+      
+      // SEKARANG aiRaw terisi dengan benar!
+      aiRaw = data.choices?.[0]?.message?.content ?? "";
+      console.log(aiRaw);
+    }
+    else if (useOpenRouter) {
       const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {

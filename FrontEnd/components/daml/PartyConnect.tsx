@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Landmark, Hammer, BrainCircuit, LogOut, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Landmark, Hammer, LogOut, Loader2, Wifi, WifiOff } from "lucide-react";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { damlConfig, type Role } from "@/lib/daml/config";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 const ROLES: { role: Role; label: string; icon: typeof Landmark }[] = [
   { role: "investor", label: "Investor Party", icon: Landmark },
   { role: "worker", label: "Worker", icon: Hammer },
-  { role: "agent", label: "AI Agent", icon: BrainCircuit },
 ];
 
 function shorten(p: string) {
@@ -26,16 +25,16 @@ export function PartyConnect() {
 
   if (session) {
     return (
-      <div className="glass flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3">
+      <div className="brutal-card-flat flex flex-wrap items-center gap-3 p-4">
         <span
-          className={`flex items-center gap-1.5 text-[12px] ${online ? "text-success" : "text-text-secondary"}`}
+          className={`flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wider ${online ? "text-[var(--success)]" : "text-[var(--text-muted)]"}`}
         >
           {online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-          {online ? "Participant online" : "Connecting…"}
+          {online ? "Online" : "Connecting…"}
         </span>
-        <span className="h-4 w-px bg-white/10" />
-        <span className="text-[13px] capitalize text-text-secondary">{session.role}</span>
-        <span className="font-mono text-[13px] text-text-primary" title={session.party}>
+        <span className="h-4 w-px bg-[var(--border-light)]" />
+        <span className="text-[12px] uppercase font-bold text-[var(--text-secondary)]">{session.role}</span>
+        <span className="font-mono text-[12px] text-[var(--text-primary)]" title={session.party}>
           {shorten(session.party)}
         </span>
         <Button
@@ -78,49 +77,49 @@ export function PartyConnect() {
   };
 
   return (
-    <div className="glass flex flex-col gap-4 rounded-2xl p-5">
-      <div className="grid grid-cols-3 gap-2">
+    <div className="brutal-card flex flex-col gap-4 p-5">
+      <div className="grid grid-cols-2 gap-3">
         {ROLES.map(({ role: r, label, icon: Icon }) => (
           <button
             key={r}
             onClick={() => onRole(r)}
-            className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-3 text-[12px] transition-colors ${
+            className={`flex flex-col items-center gap-2 border-2 px-4 py-4 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-all ${
               role === r
-                ? "border-accent/50 bg-accent/10 text-text-primary"
-                : "border-white/8 text-text-secondary hover:bg-white/5"
+                ? "border-[var(--border)] bg-[var(--accent)] text-white shadow-[var(--shadow-brutal-sm)]"
+                : "border-[var(--border-light)] text-[var(--text-secondary)] hover:border-[var(--border)] hover:bg-[var(--surface-hover)]"
             }`}
           >
-            <Icon className="h-5 w-5" />
+            <Icon className="h-6 w-6" />
             {label}
           </button>
         ))}
       </div>
 
       <label className="flex flex-col gap-1.5">
-        <span className="text-[12px] text-text-secondary">Party ID</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Party ID</span>
         <input
           value={party}
           onChange={(e) => setParty(e.target.value)}
           placeholder="e.g. Investor::1220ab…"
-          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 font-mono text-[13px] text-text-primary outline-none focus:border-accent/50"
+          className="brutal-input"
         />
       </label>
 
       <button
         onClick={allocate}
         disabled={allocating}
-        className="self-start text-[12px] text-accent-soft hover:underline disabled:opacity-50"
+        className="self-start text-[11px] font-bold text-[var(--accent)] uppercase tracking-wider hover:underline disabled:opacity-50"
       >
-        {allocating ? "Allocating…" : "+ Register a new party on the ledger"}
+        {allocating ? "Allocating…" : "+ Register new party"}
       </button>
 
       {(error || allocError) && (
-        <p className="text-[12px] text-red-300">{error ?? allocError}</p>
+        <p className="text-[12px] font-mono text-[var(--danger)] border-2 border-[var(--danger)] rounded-xl p-2 bg-[var(--danger)]/10">{error ?? allocError}</p>
       )}
 
       <Button onClick={() => connect(party, role)} disabled={connecting || !party}>
         {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-        {connecting ? "Authenticating…" : "Connect party"}
+        {connecting ? "Authenticating…" : "Connect →"}
       </Button>
     </div>
   );

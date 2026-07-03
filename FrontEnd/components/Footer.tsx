@@ -40,7 +40,7 @@ function Mark() {
 
 export function Footer() {
   return (
-    <footer className="relative mt-12 border-t border-white/[0.06]">
+    <footer className="relative mt-12 border-t border-[var(--border-light)]">
       <div className="mx-auto grid w-full max-w-shell gap-10 px-5 py-14 sm:px-8 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
           <div className="flex items-center gap-2.5">
@@ -78,7 +78,7 @@ export function Footer() {
         ))}
       </div>
 
-      <div className="border-t border-white/[0.06]">
+      <div className="border-t border-[var(--border-light)]">
         <div className="mx-auto flex w-full max-w-shell flex-wrap items-center justify-between gap-3 px-5 py-6 text-[12px] text-text-secondary sm:px-8">
           <span>© {new Date().getFullYear()} Vindex. Not an EVM application.</span>
           <span>Canton · Daml · IPFS</span>

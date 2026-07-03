@@ -1,6 +1,3 @@
-"use client";
-
-import { motion } from "framer-motion";
 import {
   Wallet,
   Vote,
@@ -73,21 +70,17 @@ export function HowItWorks() {
 
       <div className="relative mt-14">
         {/* connecting rail */}
-        <div className="absolute left-[27px] top-2 bottom-2 hidden w-px bg-gradient-to-b from-accent/40 via-white/10 to-transparent sm:block" />
+        <div className="absolute left-[27px] top-2 bottom-2 hidden w-px bg-gradient-to-b from-accent/40 via-black/10 dark:via-white/10 to-transparent sm:block" />
         <div className="flex flex-col gap-5">
-          {STEPS.map((s, i) => (
-            <motion.div
+          {STEPS.map((s) => (
+            <div
               key={s.n}
-              initial={{ opacity: 0, x: -16 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: "-60px" }}
-              transition={{ duration: 0.55, delay: i * 0.06, ease: [0.22, 1, 0.36, 1] }}
-              className="relative flex items-start gap-5"
+              className="relative flex items-start gap-5 transition-all duration-300 hover:translate-x-1"
             >
               <span className="relative z-10 grid h-14 w-14 shrink-0 place-items-center rounded-2xl glass-strong text-accent-soft">
                 <s.icon className="h-5 w-5" />
               </span>
-              <div className="glass flex-1 rounded-2xl p-5 sm:p-6">
+              <div className="glass flex-1 rounded-2xl p-5 sm:p-6 transition-all duration-300 hover:border-accent/30">
                 <div className="flex items-baseline gap-3">
                   <span className="font-display text-sm font-bold text-accent-soft">{s.n}</span>
                   <h3 className="text-lg font-semibold text-text-primary">{s.title}</h3>
@@ -96,7 +89,7 @@ export function HowItWorks() {
                   {s.body}
                 </p>
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

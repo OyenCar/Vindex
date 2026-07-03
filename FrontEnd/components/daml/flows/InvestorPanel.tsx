@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { useStreamQueries } from "@/lib/daml/useStreamQueries";
 import { useCommand } from "@/lib/daml/useCommand";
@@ -11,7 +11,7 @@ import { damlConfig } from "@/lib/daml/config";
 import { ipfsUrl } from "@/lib/daml/storage";
 import { Vindex, num, hours, STATUS_LABEL } from "@/lib/daml/vindex";
 import { cn } from "@/lib/utils";
-import { Info, HelpCircle, FileText, Settings, ShieldAlert, Award } from "lucide-react";
+import { Info, Settings, ShieldAlert, Award, ChevronDown, ChevronUp, Cpu, Loader2 } from "lucide-react";
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
@@ -28,36 +28,271 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] text-text-secondary">{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50 font-sans"
+        className="brutal-input"
       />
+    </label>
+  );
+}
+
+/** Number-only field that rejects negative and zero values with inline feedback. */
+function NumField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const parsed = Number(value);
+  const hasInput = value.trim().length > 0;
+  const isValid = hasInput && Number.isFinite(parsed) && parsed > 0;
+  const showError = hasInput && !isValid;
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">{label}</span>
+      <input
+        value={value}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "" || /^\d*\.?\d*$/.test(raw)) onChange(raw);
+        }}
+        placeholder={placeholder}
+        inputMode="decimal"
+        className={cn(
+          "brutal-input",
+          showError && "border-[var(--danger)] focus:shadow-[2px_2px_0px_var(--danger)]",
+        )}
+      />
+      {showError && (
+        <span className="text-[10px] font-bold text-[var(--danger)]">MUST BE {'>'} 0</span>
+      )}
     </label>
   );
 }
 
 function Card({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className={cn("glass flex flex-col gap-3 rounded-2xl p-5", className)}>
-      <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+    <section className={cn("brutal-card flex flex-col gap-3 p-5", className)}>
+      <h3 className="text-[13px] font-black uppercase tracking-wider text-[var(--text-primary)] font-display">{title}</h3>
       {children}
     </section>
+  );
+}
+
+// ─── AI Audit Section ────────────────────────────────────────────────────────
+
+interface AiVerdict {
+  rejectionValid: boolean;
+  confidence: number;
+  summary: string;
+  checklist?: { item: string; met: boolean; evidence: string }[];
+  rejectionAssessment?: { reason: string; justified: boolean; note: string }[];
+}
+
+function AiAuditSection({
+  project,
+  milestoneIndex,
+  milestoneSpec,
+  aiProvider,
+  aiKey,
+  onResolveStale,
+}: {
+  project: any;
+  milestoneIndex: number;
+  milestoneSpec: any;
+  aiProvider?: string;
+  aiKey?: string;
+  onResolveStale?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<AiVerdict | null>(null);
+
+  const storageKey = `vindex:verdict:${project.payload.briefUri || project.payload.requirements}-${milestoneIndex}`;
+
+  useEffect(() => {
+    const cached = localStorage.getItem(storageKey);
+    if (cached) {
+      try {
+        setVerdict(JSON.parse(cached));
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [storageKey]);
+
+  // Runs the AI AND commits Project.AgentVerdict on-ledger via /api/auto-arbitrate (NOT the
+  // display-only /api/agent-verdict). This is what actually RELEASES the worker's payment when the
+  // verdict is UNJUSTIFIED — the old path only printed "Release payout" text but moved no money.
+  // This panel shows only while the milestone is RejPending, so it also serves as a retry if the
+  // reject-time auto-arbitration failed.
+  const runAudit = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auto-arbitrate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectCid: project.contractId,
+          agentParty: project.payload.agent,
+          todoText: project.payload.requirements,
+          todoUri: project.payload.briefUri,
+          submissionUri: project.payload.currentSubmissionUri || null,
+          rejectionReasons: project.payload.rejectionReasons || ["Deliverable needs verification"],
+          milestoneIndex,
+          totalMilestones: project.payload.milestones.length,
+          milestoneSpec,
+          aiProvider,
+          aiKey: aiKey?.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "AI arbitration failed");
+      }
+      setVerdict(data.verdict);
+      localStorage.setItem(storageKey, JSON.stringify(data.verdict));
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-enforce ONCE per project contract: while a milestone is stuck in RejPending with no
+  // verdict yet, run the arbiter automatically (commits the verdict on-ledger → releases the
+  // worker's payment when unjustified) with NO investor click. Guarded per contractId and delayed
+  // so it never races the reject-time arbitration; the timer is cleared on unmount — i.e. as soon
+  // as the dispute resolves and this panel disappears, so it can't double-fire.
+  const autoEnforcedCid = useRef<string | null>(null);
+  useEffect(() => {
+    if (project.payload.status !== "RejPending") return;
+    if (verdict || loading) return;
+    if (autoEnforcedCid.current === project.contractId) return;
+    autoEnforcedCid.current = project.contractId;
+    const t = setTimeout(() => { void runAudit(); }, 2500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.contractId, project.payload.status]);
+
+  return (
+    <div className="mt-2 border-t border-white/5 pt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[11px] text-accent-soft hover:text-white transition-colors cursor-pointer outline-none select-none"
+      >
+        <Cpu className="h-3.5 w-3.5" />
+        <span>AI Arbitration / Audit</span>
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+
+      {open && (
+        <div className="mt-2 p-2.5 rounded-lg border border-white/5 bg-black/10 flex flex-col gap-2">
+          {verdict ? (
+            <div className="flex flex-col gap-2">
+              <div className={cn(
+                "p-2 rounded border text-[11px]",
+                verdict.rejectionValid
+                  ? "bg-amber-500/10 border-amber-500/20 text-amber-300"
+                  : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+              )}>
+                <p className="font-bold uppercase tracking-wider text-[9px] mb-0.5">
+                  AI Verdict ({Math.round(verdict.confidence * 100)}% confidence)
+                </p>
+                <p className="font-semibold mb-1">
+                  {verdict.rejectionValid
+                    ? "REJECTION JUSTIFIED → Work revision required."
+                    : "REJECTION UNJUSTIFIED → Release payout / pass milestone."}
+                </p>
+                <p className="text-[10px] text-text-secondary leading-relaxed">{verdict.summary}</p>
+              </div>
+
+              {verdict.checklist && verdict.checklist.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] uppercase tracking-wider text-text-secondary font-bold">Requirements Checklist:</span>
+                  <ul className="flex flex-col gap-1">
+                    {verdict.checklist.map((item, idx) => (
+                      <li key={idx} className="text-[10px] flex items-start gap-1.5 bg-white/[0.01] p-1.5 rounded">
+                        <span className={item.met ? "text-emerald-400 font-bold shrink-0" : "text-amber-400 font-bold shrink-0"}>
+                          {item.met ? "✓" : "✗"}
+                        </span>
+                        <div className="flex-1">
+                          <p className="text-text-primary font-medium">{item.item}</p>
+                          <p className="text-text-secondary text-[9px] leading-normal">{item.evidence}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-2">
+              <p className="text-[11px] text-text-secondary mb-2">
+                No verdict yet. Run the AI arbiter — it rules on the dispute and enforces the result
+                on-ledger (unjustified → releases the worker&apos;s payment).
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={runAudit}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-1.5 text-[11px] h-7"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Arbitrating &amp; enforcing…
+                  </>
+                ) : (
+                  "Run AI Arbitration & Enforce"
+                )}
+              </Button>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-[10px] text-red-400 font-medium">⚠️ Error: {error}</p>
+          )}
+
+          {/* BYOK liveness fallback: if the Agent never ruled before the verdict deadline, the
+              investor (or worker) can force the milestone to auto-accept and pay the worker. */}
+          {onResolveStale && project.payload.agentVerdictDeadline &&
+            new Date(project.payload.agentVerdictDeadline).getTime() < Date.now() && (
+              <div className="mt-1 flex flex-col gap-1 border-t border-white/5 pt-2">
+                <p className="text-[10px] text-amber-300">
+                  Verdict overdue — the Agent never ruled. Release the milestone to the worker
+                  (an unsubstantiated rejection loses).
+                </p>
+                <Button size="sm" variant="secondary" onClick={onResolveStale} className="w-full text-[11px] h-7">
+                  Release to worker (verdict overdue)
+                </Button>
+              </div>
+            )}
+        </div>
+      )}
+    </div>
   );
 }
 
 // ─── Tab bar ─────────────────────────────────────────────────────────────────
 
 const INVESTOR_TABS = [
-  { id: "setup", label: "Setup" },
   { id: "post", label: "Post Job" },
-  { id: "review", label: "Review" },
   { id: "monitor", label: "Monitor" },
 ] as const;
 
-type InvestorTab = (typeof INVESTOR_TABS)[number]["id"];
+type InvestorTab = "setup" | "post" | "monitor";
 
 function TabBar({
   active,
@@ -69,21 +304,24 @@ function TabBar({
   badges?: Partial<Record<InvestorTab, number>>;
 }) {
   return (
-    <div className="mb-5 flex gap-1 rounded-xl border border-white/8 bg-white/[0.02] p-1">
+    <div className="flex gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-full border border-[var(--border-light)] max-w-fit">
       {INVESTOR_TABS.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            "relative flex-1 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
+            "relative px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 rounded-full cursor-pointer flex items-center justify-center gap-1.5",
             active === t.id
-              ? "bg-accent/15 text-accent-soft shadow-sm"
-              : "text-text-secondary hover:text-text-primary",
+              ? "bg-[var(--accent)] text-white shadow-sm"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5",
           )}
         >
           {t.label}
           {badges?.[t.id] ? (
-            <span className="ml-1.5 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-accent/30 px-1 text-[10px] font-semibold text-accent-soft">
+            <span className={cn(
+              "inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-black",
+              active === t.id ? "bg-white text-[var(--accent)]" : "bg-[var(--accent)] text-white"
+            )}>
               {badges[t.id]}
             </span>
           ) : null}
@@ -102,27 +340,60 @@ function SetupTab({
   setAgent,
   budget,
   setBudget,
-  agentFee,
-  setAgentFee,
+  aiProvider,
+  setAiProvider,
+  aiKey,
+  setAiKey,
   createParty,
   createCmd,
   setNewPartyMode,
 }: any) {
+  const budgetOk = Number(budget) > 0;
+  const formReady = agent.trim().length > 0 && budgetOk;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
       {/* Left Col: Setup form or active party details */}
       <div className="flex flex-col gap-4">
         {!myParty || newPartyMode ? (
           <Card title="Create Investor Party">
-            <p className="text-[12px] text-text-secondary">
+            <p className="text-[12px] text-[var(--text-secondary)]">
               Each project is its own Investor Party (a fresh funding pool + governance group).
             </p>
-            <Field label="AI Agent party id" value={agent} onChange={setAgent} placeholder="Agent::1220…" />
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Budget funding" value={budget} onChange={setBudget} />
-              <Field label="Agent-fee funding" value={agentFee} onChange={setAgentFee} />
+
+            <div className="border-2 border-[var(--accent)] bg-[var(--accent-muted)] p-3.5 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-[var(--accent)]" />
+                <span className="text-[12px] font-black uppercase tracking-wider text-[var(--text-primary)]">AI Governance Agent</span>
+              </div>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                Assign the AI Agent that will arbitrate disputes. Required before posting.
+              </p>
+              <Field label="Agent party ID" value={agent} onChange={setAgent} placeholder="Agent::1220…" />
             </div>
-            <Button onClick={createParty} disabled={!agent || createCmd.phase === "submitting"}>
+
+            <NumField label="Budget funding" value={budget} onChange={setBudget} placeholder="e.g. 4000" />
+
+            {/* BYOK: the investor brings their own AI provider key. Session-only; used server-side
+                for a single arbitration call and never written on-ledger. */}
+            <div className="border-2 border-[var(--border-light)] p-3.5 flex flex-col gap-2 rounded-xl">
+              <span className="text-[12px] font-black uppercase tracking-wider text-[var(--text-primary)]">
+                Arbiter AI Key (BYOK)
+              </span>
+              <p className="text-[11px] text-[var(--text-secondary)]">
+                Bring your own model key — it pays for disputes you escalate. Session-only, never stored.
+              </p>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Provider</span>
+                <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="brutal-input">
+                  <option value="groq">Groq</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+              </label>
+              <Field label="API key" value={aiKey} onChange={setAiKey} placeholder="optional; falls back to server key" />
+            </div>
+            <Button onClick={createParty} disabled={!formReady || createCmd.phase === "submitting"}>
               Create Investor Party
             </Button>
             {myParty && (
@@ -134,15 +405,15 @@ function SetupTab({
           </Card>
         ) : (
           <Card title="Investor Party Details">
-            <div className="rounded-lg border border-success/25 bg-success/5 px-4 py-3">
-              <p className="text-[12px] text-success font-semibold">✓ Investor Party active</p>
-              <p className="text-[11px] text-text-secondary mt-0.5">
+            <div className="border-2 border-[var(--success)] bg-[var(--success)]/10 px-4 py-3">
+              <p className="text-[12px] text-[var(--success)] font-black uppercase tracking-wider">✓ Party Active</p>
+              <p className="text-[11px] text-[var(--text-secondary)] mt-0.5">
                 {myParty.payload.members.length} member(s) · Agent:{" "}
-                <span className="font-mono text-text-primary text-[10px]">{myParty.payload.agent}</span>
+                <span className="font-mono text-[var(--text-primary)] text-[10px]">{myParty.payload.agent}</span>
               </p>
             </div>
             <Button variant="ghost" size="sm" className="mt-2" onClick={() => setNewPartyMode(true)}>
-              + Start a separate project (new Investor Party)
+              + New Project
             </Button>
           </Card>
         )}
@@ -158,8 +429,9 @@ function SetupTab({
           <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
             <h4 className="font-semibold text-text-primary text-[11px] uppercase tracking-wider">Setup Checklist:</h4>
             <ul className="flex flex-col gap-2 list-disc pl-4 text-[11px]">
-              <li>Specify a valid AI Agent party ID for automated dispute resolution arbitration.</li>
-              <li>Provide budget funding to overfund milestones.</li>
+              <li><span className="text-text-primary font-medium">Configure the AI Agent</span> — required for automated dispute resolution.</li>
+              <li>Provide budget funding to cover milestones.</li>
+              <li>Bring your own AI key — you pay only for disputes you escalate.</li>
               <li>Setup is on-ledger, giving finality of governance rules.</li>
             </ul>
           </div>
@@ -190,8 +462,8 @@ function PostTab({
   setBudget,
   commitment,
   setCommitment,
-  agentFee,
-  setAgentFee,
+  maxRevisions,
+  setMaxRevisions,
   fundAndPost,
   postCmd,
   editingPostingCid,
@@ -205,6 +477,18 @@ function PostTab({
 }: any) {
   const budgetNum = Number(budget);
   const budgetValid = Number.isFinite(budgetNum) && budgetNum > 0;
+  const commitmentNum = Number(commitment);
+  const commitmentValid = Number.isFinite(commitmentNum) && commitmentNum > 0;
+  const numbersValid = budgetValid && commitmentValid;
+
+  // Idempotency guard: block re-posting a job whose requirements match an already-active
+  // posting. Stops the "spam Fund Vaults & Post Job" duplicate flood. myPostings is the live
+  // set of active ProjectPosting contracts, so a taken-down/archived posting frees the text.
+  const trimmedReq = (requirements ?? "").trim();
+  const dupPosting =
+    trimmedReq.length > 0 &&
+    Array.isArray(myPostings) &&
+    myPostings.some((p: any) => ((p?.payload?.requirements ?? "") as string).trim() === trimmedReq);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px] items-start">
@@ -218,95 +502,105 @@ function PostTab({
                 value={requirements}
                 onChange={(e) => setRequirements(e.target.value)}
                 rows={2}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[13px] text-text-primary outline-none focus:border-accent/50 font-sans"
+                className="brutal-input font-sans"
               />
             </label>
             <FileUpload label="Project brief / reference files (→ IPFS)" cid={briefCid} onUploaded={setBriefCid} />
 
             {/* Posting mode toggle */}
-            <div className="flex justify-between items-center bg-white/[0.02] border border-white/8 rounded-xl p-3">
+            <div className="flex justify-between items-center border-2 border-[var(--border-light)] p-3 rounded-xl bg-black/[0.01] dark:bg-white/[0.01]">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[12px] font-semibold text-text-primary">Posting Mode</span>
-                <span className="text-[11px] text-text-secondary">
-                  {isOpenPool ? "Open Pool (any Worker can apply)" : "Invite Only (only pool members can apply)"}
+                <span className="text-[11px] font-black uppercase tracking-wider text-[var(--text-primary)]">Posting Mode</span>
+                <span className="text-[11px] text-[var(--text-secondary)]">
+                  {isOpenPool
+                    ? "Open Pool — visible to all Worker parties"
+                    : "Invite Only — only listed workers can apply"}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setIsOpenPool(!isOpenPool)}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                  isOpenPool ? "bg-emerald-500" : "bg-white/10"
+                className={`relative flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isOpenPool ? "bg-[var(--accent)]" : "bg-black/15 dark:bg-white/15"
                 }`}
+                role="switch"
+                aria-checked={isOpenPool}
               >
                 <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    isOpenPool ? "translate-x-4" : "translate-x-0"
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    isOpenPool ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
               </button>
             </div>
 
             {/* Worker pool */}
-            <div className="rounded-lg border border-white/8 bg-white/[0.02] p-3 flex flex-col gap-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[12px] text-text-primary font-medium">
-                  {isOpenPool ? "Worker Audience (Open Pool)" : "Invited Workers (Invite Only)"}
-                </span>
-                <span className="text-[11px] text-text-secondary">{workers.length} worker(s)</span>
+            {!isOpenPool && (
+              <div className="border-2 border-[var(--border-light)] p-3 flex flex-col gap-2 rounded-xl">
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-text-primary font-medium">
+                    Invited Workers
+                  </span>
+                  <span className="text-[11px] text-text-secondary">{workers.length} added</span>
+                </div>
+                {workers.length > 0 ? (
+                  <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
+                    {workers.map((w: string) => (
+                      <li key={w} className="flex justify-between items-center gap-2 rounded bg-black/[0.02] dark:bg-white/[0.03] border border-[var(--border-light)] px-2 py-1 text-[11px] font-mono">
+                        <span className="truncate text-text-secondary" title={w}>{w}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeWorker(w)}
+                          className="text-text-secondary hover:text-red-400 transition-colors px-1 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-amber-300">
+                    Invite Only is active — add at least one worker party below so they can see and apply to this job.
+                  </p>
+                )}
+                <div className="flex gap-2 mt-1">
+                  <input
+                    value={newWorkerInput}
+                    onChange={(e) => setNewWorkerInput(e.target.value)}
+                    placeholder="Worker::1220..."
+                    className="flex-1 rounded border border-[var(--border-light)] bg-black/[0.02] dark:bg-white/[0.03] px-2 py-1.5 text-[12px] text-text-primary outline-none focus:border-accent/50 font-mono"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); addWorker(); }
+                    }}
+                  />
+                  <Button type="button" size="sm" onClick={addWorker}>Add</Button>
+                </div>
               </div>
-              {workers.length > 0 ? (
-                <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto pr-1">
-                  {workers.map((w: string) => (
-                    <li key={w} className="flex justify-between items-center gap-2 rounded bg-white/[0.03] border border-white/5 px-2 py-1 text-[11px] font-mono">
-                      <span className="truncate text-text-secondary" title={w}>{w}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeWorker(w)}
-                        className="text-text-secondary hover:text-red-400 transition-colors px-1"
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[11px] text-amber-300">
-                  {isOpenPool
-                    ? "No workers pre-added. The system will accept any Worker:: party."
-                    : "No workers added. Add at least one worker party below so they can see and apply to this job."}
-                </p>
-              )}
-              <div className="flex gap-2 mt-1">
-                <input
-                  value={newWorkerInput}
-                  onChange={(e) => setNewWorkerInput(e.target.value)}
-                  placeholder="Worker::1220..."
-                  className="flex-1 rounded border border-white/10 bg-white/[0.03] px-2 py-1.5 text-[12px] text-text-primary outline-none focus:border-accent/50 font-mono"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); addWorker(); }
-                  }}
-                />
-                <Button type="button" size="sm" onClick={addWorker}>Add</Button>
-              </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Budget envelope (cap)" value={budget} onChange={setBudget} />
-              <Field label="Required worker stake" value={commitment} onChange={setCommitment} />
+              <NumField label="Budget envelope (cap)" value={budget} onChange={setBudget} placeholder="e.g. 4000" />
+              <NumField label="Required worker stake" value={commitment} onChange={setCommitment} placeholder="e.g. 500" />
             </div>
+            <NumField label="Max revision rounds (ceiling)" value={maxRevisions} onChange={setMaxRevisions} placeholder="e.g. 3" />
             <p className="text-[11px] text-text-secondary">
-              You fund the budget <span className="text-text-primary">envelope</span> and set the worker
-              stake. After you select a worker, they draft the milestone plan for you to approve.
+              You fund the budget <span className="text-text-primary">envelope</span>, set the worker
+              stake, and cap how many revision rounds the worker may propose. After you select a worker,
+              they draft the milestone plan (bounded by your ceiling) for you to approve.
             </p>
-            {!budgetValid && (
-              <p className="text-[11px] text-amber-300">Enter a budget envelope greater than 0.</p>
-            )}
             <Button
               onClick={fundAndPost}
-              disabled={postCmd.phase === "submitting" || !budgetValid || (!isOpenPool && workers.length === 0)}
+              disabled={postCmd.phase === "submitting" || !numbersValid || dupPosting || (!isOpenPool && workers.length === 0)}
             >
               Fund Vaults &amp; Post Job
             </Button>
+            {dupPosting && (
+              <p className="text-[11px] text-amber-300">
+                You already have an active posting with these requirements. Edit the description, or
+                take down the existing posting before posting again.
+              </p>
+            )}
             <TxStatus status={postCmd} />
           </Card>
         ) : (
@@ -437,92 +731,6 @@ function PostTab({
   );
 }
 
-// ─── Review Tab ───────────────────────────────────────────────────────────────
-
-function ReviewTab({
-  myMandates,
-  myPlans,
-  planCmd,
-  approvePlan,
-  rejectPlan,
-  planRequired,
-}: any) {
-  const hasActivePlans = myMandates.length > 0 || myPlans.length > 0;
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
-      {/* Left Col: list of submitted worker plans */}
-      <Card title="Worker SOW Approvals">
-        {!hasActivePlans ? (
-          <p className="text-[12px] text-text-secondary">
-            No plans yet. After you select a worker, they draft a plan here for your approval.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {myMandates.map((m: any) => (
-              <li key={m.contractId} className="rounded-lg border border-white/8 px-3 py-2 text-[12px] text-text-secondary">
-                Worker selected — waiting for{" "}
-                <span className="font-mono text-text-primary">{m.payload.worker}</span> to submit a plan…
-              </li>
-            ))}
-            {myPlans.map((pl: any) => {
-              const required = planRequired(pl);
-              return (
-                <li key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
-                  <p className="text-[12px] text-text-secondary font-medium">
-                    Plan from <span className="font-mono text-text-primary">{pl.payload.worker}</span>
-                  </p>
-                  <ul className="flex flex-col gap-1 text-[12px] border-t border-b border-white/5 py-1.5 my-1">
-                    {pl.payload.milestones.map((m: any, i: number) => (
-                      <li key={i} className="flex justify-between py-0.5">
-                        <span className="text-text-secondary">
-                          Milestone {i + 1}{m.isFinal ? " (final)" : ""}
-                        </span>
-                        <span className="font-mono text-text-primary font-semibold">{m.payment}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[11px] text-text-secondary">
-                    {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions · needs ≥{" "}
-                    <span className="text-text-primary font-semibold">{required.toFixed(0)}</span> from the envelope
-                  </p>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    <Button size="sm" onClick={() => approvePlan(pl)} disabled={planCmd.phase === "submitting"}>
-                      Approve &amp; Start
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => rejectPlan(pl)} disabled={planCmd.phase === "submitting"}>
-                      Reject &amp; Ask to Revise
-                    </Button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <TxStatus status={planCmd} />
-      </Card>
-
-      {/* Right Col: Review Guidelines */}
-      <Card title="Plan Audit Guidelines">
-        <div className="flex flex-col gap-3 text-[12px] text-text-secondary leading-relaxed">
-          <div className="flex gap-2">
-            <Info className="h-4 w-4 text-accent-soft shrink-0" />
-            <p>Review the SOW proposal. Your approval locks the escrow vault and starts the project.</p>
-          </div>
-          <div className="flex flex-col gap-1.5 border-t border-white/5 pt-3">
-            <h4 className="font-semibold text-text-primary text-[11px] uppercase tracking-wider">Review Steps:</h4>
-            <ul className="flex flex-col gap-2 list-disc pl-4 text-[11px]">
-              <li>Validate the milestone count against project requirements.</li>
-              <li>Ensure the sum matches the agreed freelance terms.</li>
-              <li>Approval creates the live project contract instantly on Canton.</li>
-            </ul>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 // ─── Monitor Tab ──────────────────────────────────────────────────────────────
 
 function MonitorTab({
@@ -533,14 +741,78 @@ function MonitorTab({
   mySettlements,
   reasonsText,
   setReasonsText,
+  submissionPaste,
+  setSubmissionPaste,
   voteCmd,
   acceptSubmission,
   rejectSubmission,
+  autoArbitrateStatus,
+  autoArbitrateError,
+  autoArbitrateVerdict,
+  aiProvider,
+  aiKey,
+  resolveStale,
+  // SOW plan approvals sub section parameters:
+  myMandates = [],
+  myPlans = [],
+  planCmd = { phase: "idle" },
+  approvePlan,
+  rejectPlan,
+  planRequired,
 }: any) {
+  const hasActivePlans = myMandates.length > 0 || myPlans.length > 0;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
-      {/* Left Col: Milestone Reviews & Projects status */}
+      {/* Left Col: SOW approvals, Milestone Reviews & Projects status */}
       <div className="flex flex-col gap-4">
+        {/* Subsection: Statement of Work (SOW) Approvals */}
+        {hasActivePlans && (
+          <Card title="Worker SOW Approvals">
+            <ul className="flex flex-col gap-3">
+              {myMandates.map((m: any) => (
+                <li key={m.contractId} className="rounded-lg border border-white/8 px-3 py-2 text-[12px] text-text-secondary">
+                  Worker selected — waiting for{" "}
+                  <span className="font-mono text-text-primary">{m.payload.worker}</span> to submit a plan…
+                </li>
+              ))}
+              {myPlans.map((pl: any) => {
+                const required = planRequired ? planRequired(pl) : 0;
+                return (
+                  <li key={pl.contractId} className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent/5 p-3">
+                    <p className="text-[12px] text-text-secondary font-medium">
+                      Plan from <span className="font-mono text-text-primary">{pl.payload.worker}</span>
+                    </p>
+                    <ul className="flex flex-col gap-1 text-[12px] border-t border-b border-white/5 py-1.5 my-1">
+                      {pl.payload.milestones.map((m: any, i: number) => (
+                        <li key={i} className="flex justify-between py-0.5">
+                          <span className="text-text-secondary">
+                            Milestone {i + 1}{m.isFinal ? " (final)" : ""}
+                          </span>
+                          <span className="font-mono text-text-primary font-semibold">{m.payment}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[11px] text-text-secondary">
+                      {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions · needs ≥{" "}
+                      <span className="text-text-primary font-semibold">{required.toFixed(0)}</span> from the envelope
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <Button size="sm" onClick={() => approvePlan(pl)} disabled={planCmd.phase === "submitting"}>
+                        Approve &amp; Start
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => rejectPlan(pl)} disabled={planCmd.phase === "submitting"}>
+                        Reject &amp; Ask to Revise
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <TxStatus status={planCmd} />
+          </Card>
+        )}
+
         {/* Review Submissions */}
         <Card title="Active Milestone Reviews">
           {myReviews.length === 0 ? (
@@ -569,7 +841,7 @@ function MonitorTab({
                       <p className="text-[12px] text-text-secondary">Waiting for worker submission upload…</p>
                     ) : (
                       <div className="flex flex-col gap-3 border-t border-white/5 pt-3">
-                        <Button size="sm" onClick={() => acceptSubmission(r, proj)} disabled={busy}>
+                        <Button size="sm" onClick={() => acceptSubmission(r, proj)} disabled={busy || autoArbitrateStatus === "running"}>
                           Accept &amp; Release Payment
                         </Button>
                         <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
@@ -582,10 +854,62 @@ function MonitorTab({
                             rows={2}
                             placeholder="Reason for rejection…"
                             className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[12px] text-text-primary outline-none focus:border-accent/50 font-sans"
+                            disabled={autoArbitrateStatus === "running"}
                           />
-                          <Button size="sm" variant="secondary" onClick={() => rejectSubmission(r, proj)} disabled={busy}>
-                            Reject → Escalate
+                          {(!proj.payload.currentSubmissionUri ||
+                            proj.payload.currentSubmissionUri.startsWith("local-")) && (
+                            <>
+                              <span className="text-[11px] text-amber-300">
+                                Deliverable isn&apos;t on IPFS (not pinned) — paste it so the AI can audit it:
+                              </span>
+                              <textarea
+                                value={submissionPaste}
+                                onChange={(e) => setSubmissionPaste(e.target.value)}
+                                rows={3}
+                                placeholder="Paste the worker's deliverable text…"
+                                className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[12px] text-text-primary outline-none focus:border-accent/50 font-sans"
+                                disabled={autoArbitrateStatus === "running"}
+                              />
+                            </>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => rejectSubmission(r, proj)}
+                            disabled={busy || autoArbitrateStatus === "running"}
+                          >
+                            {autoArbitrateStatus === "running" ? "Arbitrating..." : "Reject → Escalate"}
                           </Button>
+
+                          {/* Auto Arbitration Status Messages */}
+                          {autoArbitrateStatus === "running" && (
+                            <div className="mt-2 text-[11px] text-sky-400 flex items-center gap-1.5 animate-pulse">
+                              <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                              Running automatic AI audit &amp; arbitration...
+                            </div>
+                          )}
+                          {autoArbitrateStatus === "failed" && autoArbitrateError && (
+                            <div className="mt-2 text-[11px] text-red-400 font-medium">
+                              ⚠️ Auto-arbitration failed: {autoArbitrateError}
+                            </div>
+                          )}
+                          {autoArbitrateStatus === "done" && autoArbitrateVerdict && (
+                            <div className={`mt-2 text-[11px] p-2.5 rounded-lg border ${
+                              autoArbitrateVerdict.rejectionValid 
+                                ? "bg-amber-500/10 border-amber-500/20 text-amber-300" 
+                                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                            }`}>
+                              <p className="font-bold uppercase tracking-wider text-[9px] mb-0.5">
+                                AI Arbitration Verdict ({Math.round(autoArbitrateVerdict.confidence * 100)}% confidence)
+                              </p>
+                              <p className="font-semibold mb-1">
+                                {autoArbitrateVerdict.rejectionValid 
+                                  ? "REJECTION JUSTIFIED → Sent to worker for revision." 
+                                  : "REJECTION UNJUSTIFIED → Penalty applied & escrow released to worker!"}
+                              </p>
+                              <p className="text-[10px] text-text-secondary leading-relaxed">{autoArbitrateVerdict.summary}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -603,14 +927,65 @@ function MonitorTab({
             <p className="text-[12px] text-text-secondary">No active projects or settlements yet.</p>
           ) : (
             <ul className="flex flex-col gap-2 text-[13px]">
-              {myProjects.map((p: any) => (
-                <li key={p.contractId} className="flex items-center justify-between rounded-lg border border-white/8 px-3 py-2">
-                  <span className="text-text-secondary">
-                    Milestone {Number(p.payload.currentIndex) + 1}/{p.payload.milestones.length}
-                  </span>
-                  <span className="text-text-primary font-semibold">{STATUS_LABEL[p.payload.status] ?? p.payload.status}</span>
-                </li>
-              ))}
+              {myProjects.map((p: any) => {
+                const idx = Number(p.payload.currentIndex);
+                return (
+                  <div key={p.contractId} className="flex flex-col gap-3 rounded-lg border border-white/8 p-3.5 mb-2 bg-white/[0.01]">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                      <div>
+                        <p className="text-[12px] font-bold text-text-primary">
+                          Project: {p.payload.requirements.slice(0, 50)}{p.payload.requirements.length > 50 ? "..." : ""}
+                        </p>
+                        <p className="text-[10px] text-text-secondary mt-0.5">
+                          Milestone {idx + 1}/{p.payload.milestones.length}
+                        </p>
+                      </div>
+                      <span className="text-[11px] font-semibold bg-accent-soft/10 text-accent-soft px-2 py-0.5 rounded">
+                        {STATUS_LABEL[p.payload.status] ?? p.payload.status}
+                      </span>
+                    </div>
+
+                    <ul className="flex flex-col gap-2">
+                      {p.payload.milestones.map((m: any, i: number) => {
+                        const paid = i < idx;
+                        const current = i === idx;
+                        return (
+                          <li key={i} className="flex flex-col gap-1 rounded-lg bg-white/[0.01] border border-white/5 p-3 text-[12px]">
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={cn(
+                                  "font-medium",
+                                  paid ? "text-success" : current ? "text-accent-soft" : "text-text-secondary"
+                                )}
+                              >
+                                {paid ? "✓ paid" : current ? "▶ current" : "• upcoming"} · Milestone {i + 1}
+                                {m.isFinal ? " (final)" : ""}
+                              </span>
+                              <span className="font-mono text-text-primary font-semibold">{m.payment}</span>
+                            </div>
+
+                            {/* AI arbitration only surfaces AFTER the investor rejects: show it on the
+                                current milestone only while the dispute is live (RejPending). Not on
+                                past/paid milestones, not before a reject. The reject flow itself
+                                (rejectSubmission → /api/auto-arbitrate) already runs the AI + commits
+                                the verdict automatically; this panel is the read-only view of it. */}
+                            {current && p.payload.status === "RejPending" && (
+                              <AiAuditSection
+                                project={p}
+                                milestoneIndex={i}
+                                milestoneSpec={m}
+                                aiProvider={aiProvider}
+                                aiKey={aiKey}
+                                onResolveStale={() => resolveStale(p)}
+                              />
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
               {mySettlements.map((s: any) => (
                 <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
                   <span className="text-text-secondary font-medium">✅ Settled · {s.payload.reason}</span>
@@ -640,6 +1015,26 @@ function MonitorTab({
             </ul>
           )}
         </Card>
+
+        {/* Plan Audit Guidelines Card (merged from SOW guidelines) */}
+        {hasActivePlans && (
+          <Card title="Plan Audit Guidelines">
+            <div className="flex flex-col gap-3 text-[12px] text-[var(--text-secondary)] leading-relaxed">
+              <div className="flex gap-2">
+                <Info className="h-4 w-4 text-[var(--accent)] shrink-0" />
+                <p>Review the SOW proposal. Your approval locks the escrow vault and starts the project.</p>
+              </div>
+              <div className="flex flex-col gap-1.5 border-t border-[var(--border-light)] pt-3">
+                <h4 className="font-semibold text-[var(--text-primary)] text-[11px] uppercase tracking-wider">Review Steps:</h4>
+                <ul className="flex flex-col gap-2 list-disc pl-4 text-[11px]">
+                  <li>Validate the milestone count against project requirements.</li>
+                  <li>Ensure the sum matches the agreed freelance terms.</li>
+                  <li>Approval creates the live project contract instantly on Canton.</li>
+                </ul>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Extra Audit Badge */}
         <Card title="Secured Vaults">
@@ -677,11 +1072,16 @@ export function InvestorPanel() {
   const selectCmd = useCommand<unknown>();
   const planCmd = useCommand<unknown>();
 
-  const [agent, setAgent] = useState("");
+  const [agent, setAgent] = useState(damlConfig.parties.agent);
   const [budget, setBudget] = useState("4000");
-  const [agentFee, setAgentFee] = useState("300");
   const [commitment, setCommitment] = useState("500");
+  const [maxRevisions, setMaxRevisions] = useState("3");
+  // BYOK arbiter (v2): the investor supplies their own AI provider key; it is sent to
+  // /api/auto-arbitrate for a single call and is NEVER persisted (session-only state).
+  const [aiProvider, setAiProvider] = useState("groq");
+  const [aiKey, setAiKey] = useState("");
   const [reasonsText, setReasonsText] = useState("Deliverable does not meet the milestone spec");
+  const [submissionPaste, setSubmissionPaste] = useState("");
   const [requirements, setRequirements] = useState("Build the Vindex milestone deliverables");
   const [briefCid, setBriefCid] = useState("");
   const [workers, setWorkers] = useState<string[]>(damlConfig.workerPool);
@@ -692,6 +1092,10 @@ export function InvestorPanel() {
   const [newPartyMode, setNewPartyMode] = useState(false);
   const [preferredPartyCid, setPreferredPartyCid] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<InvestorTab>("setup");
+
+  const [autoArbitrateStatus, setAutoArbitrateStatus] = useState<string | null>(null);
+  const [autoArbitrateError, setAutoArbitrateError] = useState<string | null>(null);
+  const [autoArbitrateVerdict, setAutoArbitrateVerdict] = useState<any | null>(null);
 
   const addWorker = () => {
     const w = newWorkerInput.trim();
@@ -715,8 +1119,8 @@ export function InvestorPanel() {
 
   // Tab badges
   const badges: Partial<Record<InvestorTab, number>> = {};
-  if (myPlans.length > 0) badges.review = myPlans.length;
-  if (myReviews.length > 0) badges.monitor = myReviews.length;
+  const pendingCount = myPlans.length + myReviews.length;
+  if (pendingCount > 0) badges.monitor = pendingCount;
 
   const createParty = () =>
     createCmd
@@ -726,7 +1130,7 @@ export function InvestorPanel() {
             admin: party,
             members: [party],
             pending: [],
-            contributions: [{ investor: party, projectFunding: num(budget), agentFeeFunding: num(agentFee), weight: num(1) }],
+            contributions: [{ investor: party, projectFunding: num(budget), weight: num(1) }],
             config: {
               maxInvestors: num(5),
               votingModel: "SimpleMajority",
@@ -756,9 +1160,8 @@ export function InvestorPanel() {
             requirements,
             briefUri: briefCid,
             budgetAmount: num(budget),
-            agentFeeAmount: num(agentFee),
-            agentOpCost: num(50),
             commitmentRequired: num(commitment),
+            maxRevisions: num(Math.max(1, Math.floor(Number(maxRevisions) || 3))),
             recruitmentMode: isOpenPool ? "OPEN_POOL" : "INVITE_ONLY",
             eligibleWorkers: isOpenPool ? ["Worker::*"] : workers,
             publicParty: damlConfig.parties.public,
@@ -822,11 +1225,22 @@ export function InvestorPanel() {
       })
       .catch(() => undefined);
 
+  // BYOK liveness fallback: if the Agent never rules within agentVerdictDeadline, any member can
+  // force the stalled dispute to auto-accept — the worker is paid (an unsubstantiated rejection loses).
+  const resolveStale = (proj: (typeof projects.contracts)[number]) =>
+    voteCmd
+      .run(() => session!.ledger.exercise(Vindex.Project.ResolveStalePending, proj.contractId, { actor: party }))
+      .catch(() => undefined);
+
   const rejectSubmission = (
     review: (typeof reviews.contracts)[number],
     proj: (typeof projects.contracts)[number],
-  ) =>
-    voteCmd
+  ) => {
+    setAutoArbitrateStatus("running");
+    setAutoArbitrateError(null);
+    setAutoArbitrateVerdict(null);
+
+    return voteCmd
       .run(async () => {
         const reasons = reasonsText.split("\n").map((s) => s.trim()).filter(Boolean);
         if (reasons.length === 0) throw new Error("At least one rejection reason is required");
@@ -842,9 +1256,63 @@ export function InvestorPanel() {
           actor: party,
           reasons,
         });
-        return session!.ledger.exercise(Vindex.Project.FinalizeReview, proj.contractId, { actor: party, reviewCid: withReasons });
+
+        // Finalize review (escalates status to RejPending on ledger)
+        const [finalizedCidOpt] = await session!.ledger.exercise(Vindex.Project.FinalizeReview, proj.contractId, { actor: party, reviewCid: withReasons });
+
+        // Extract contract ID from ledger result
+        const nextCid = (finalizedCidOpt as any)?.value || finalizedCidOpt;
+        const nextProjectCid = typeof nextCid === "string" ? nextCid : proj.contractId;
+
+        // Perform background AI Arbitration
+        try {
+          const input = {
+            projectCid: nextProjectCid,
+            agentParty: proj.payload.agent,
+            todoText: proj.payload.requirements,
+            todoUri: proj.payload.briefUri,
+            // Prefer the pasted deliverable text when the file isn't on real IPFS (a `local-` CID
+            // means Pinata pinning failed → the server can't fetch it). Falls back to IPFS otherwise.
+            submissionText: submissionPaste.trim() || undefined,
+            submissionUri: proj.payload.currentSubmissionUri,
+            rejectionReasons: reasons,
+            milestoneIndex: Number(proj.payload.currentIndex),
+            totalMilestones: proj.payload.milestones.length,
+            milestoneSpec: proj.payload.milestones[Number(proj.payload.currentIndex)],
+            // BYOK: the investor's own provider key (session-only). The server uses it neutrally.
+            aiProvider,
+            aiKey: aiKey.trim() || undefined,
+          };
+
+          const res = await fetch("/api/auto-arbitrate", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(input),
+          });
+
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error ?? "AI arbitration transaction failed");
+          }
+
+          setAutoArbitrateVerdict(data.verdict);
+          const storageKey = `vindex:verdict:${proj.payload.briefUri || proj.payload.requirements}-${Number(proj.payload.currentIndex)}`;
+          localStorage.setItem(storageKey, JSON.stringify(data.verdict));
+          setAutoArbitrateStatus("done");
+        } catch (err: any) {
+          console.error("Auto arbitration failed:", err);
+          setAutoArbitrateError(err.message ?? String(err));
+          setAutoArbitrateStatus("failed");
+        }
+
+        return finalizedCidOpt;
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        setAutoArbitrateStatus("failed");
+        setAutoArbitrateError(err.message ?? String(err));
+        return undefined;
+      });
+  };
 
   const selectApplicant = (app: (typeof applications.contracts)[number]) =>
     selectCmd
@@ -870,7 +1338,22 @@ export function InvestorPanel() {
 
   return (
     <div>
-      <TabBar active={activeTab} onChange={setActiveTab} badges={badges} />
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap border-b border-[var(--border-light)] pb-4">
+        <TabBar active={activeTab} onChange={setActiveTab} badges={badges} />
+
+        <button
+          onClick={() => setActiveTab("setup")}
+          className={cn(
+            "p-2 rounded-xl border-2 transition-all duration-200 flex items-center justify-center cursor-pointer",
+            activeTab === "setup"
+              ? "bg-[var(--accent)] text-white border-[var(--accent)] shadow-glow-sm"
+              : "bg-black/5 dark:bg-white/5 text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)] hover:border-[var(--border-light)] hover:bg-black/10 dark:hover:bg-white/10"
+          )}
+          title="Setup Investor Party"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+      </div>
 
       {activeTab === "setup" && (
         <SetupTab
@@ -880,8 +1363,10 @@ export function InvestorPanel() {
           setAgent={setAgent}
           budget={budget}
           setBudget={setBudget}
-          agentFee={agentFee}
-          setAgentFee={setAgentFee}
+          aiProvider={aiProvider}
+          setAiProvider={setAiProvider}
+          aiKey={aiKey}
+          setAiKey={setAiKey}
           createParty={createParty}
           createCmd={createCmd}
           setNewPartyMode={setNewPartyMode}
@@ -908,8 +1393,8 @@ export function InvestorPanel() {
           setBudget={setBudget}
           commitment={commitment}
           setCommitment={setCommitment}
-          agentFee={agentFee}
-          setAgentFee={setAgentFee}
+          maxRevisions={maxRevisions}
+          setMaxRevisions={setMaxRevisions}
           fundAndPost={fundAndPost}
           postCmd={postCmd}
           editingPostingCid={editingPostingCid}
@@ -923,17 +1408,6 @@ export function InvestorPanel() {
         />
       )}
 
-      {activeTab === "review" && (
-        <ReviewTab
-          myMandates={myMandates}
-          myPlans={myPlans}
-          planCmd={planCmd}
-          approvePlan={approvePlan}
-          rejectPlan={rejectPlan}
-          planRequired={planRequired}
-        />
-      )}
-
       {activeTab === "monitor" && (
         <MonitorTab
           myVaults={myVaults}
@@ -943,9 +1417,23 @@ export function InvestorPanel() {
           mySettlements={mySettlements}
           reasonsText={reasonsText}
           setReasonsText={setReasonsText}
+          submissionPaste={submissionPaste}
+          setSubmissionPaste={setSubmissionPaste}
           voteCmd={voteCmd}
           acceptSubmission={acceptSubmission}
           rejectSubmission={rejectSubmission}
+          autoArbitrateStatus={autoArbitrateStatus}
+          autoArbitrateError={autoArbitrateError}
+          autoArbitrateVerdict={autoArbitrateVerdict}
+          aiProvider={aiProvider}
+          aiKey={aiKey}
+          resolveStale={resolveStale}
+          myMandates={myMandates}
+          myPlans={myPlans}
+          planCmd={planCmd}
+          approvePlan={approvePlan}
+          rejectPlan={rejectPlan}
+          planRequired={planRequired}
         />
       )}
     </div>

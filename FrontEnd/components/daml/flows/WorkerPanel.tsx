@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { useStreamQueries } from "@/lib/daml/useStreamQueries";
 import { useCommand } from "@/lib/daml/useCommand";
@@ -10,8 +10,9 @@ import { StatusBadge } from "@/components/daml/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ipfsUrl } from "@/lib/daml/storage";
 import { Vindex, num, hours, days } from "@/lib/daml/vindex";
+import type { ContractId } from "@daml/types";
 import { cn } from "@/lib/utils";
-import { Info, Send, FileText, CheckCircle } from "lucide-react";
+import { Info, Send, FileText, CheckCircle, ChevronDown, ChevronUp, Cpu, Loader2 } from "lucide-react";
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
@@ -64,16 +65,16 @@ function TabBar({
   onChange: (t: WorkerTab) => void;
 }) {
   return (
-    <div className="mb-5 flex gap-1 rounded-xl border border-white/8 bg-white/[0.02] p-1">
+    <div className="mb-6 flex gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-full border border-[var(--border-light)] max-w-fit">
       {WORKER_TABS.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            "flex-1 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
+            "px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 rounded-full cursor-pointer",
             active === t.id
-              ? "bg-accent/15 text-accent-soft shadow-sm"
-              : "text-text-secondary hover:text-text-primary",
+              ? "bg-[var(--accent)] text-white shadow-sm"
+              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5",
           )}
         >
           {t.label}
@@ -85,6 +86,156 @@ function TabBar({
 
 // ─── Tab content components ───────────────────────────────────────────────────
 
+// ─── AI Audit Section ────────────────────────────────────────────────────────
+
+interface AiVerdict {
+  rejectionValid: boolean;
+  confidence: number;
+  summary: string;
+  checklist?: { item: string; met: boolean; evidence: string }[];
+  rejectionAssessment?: { reason: string; justified: boolean; note: string }[];
+}
+
+function AiAuditSection({
+  project,
+  milestoneIndex,
+  milestoneSpec,
+}: {
+  project: any;
+  milestoneIndex: number;
+  milestoneSpec: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<AiVerdict | null>(null);
+
+  const storageKey = `vindex:verdict:${project.payload.briefUri || project.payload.requirements}-${milestoneIndex}`;
+
+  useEffect(() => {
+    const cached = localStorage.getItem(storageKey);
+    if (cached) {
+      try {
+        setVerdict(JSON.parse(cached));
+      } catch (e) {
+        // ignore
+      }
+    }
+  }, [storageKey]);
+
+  const runAudit = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/agent-verdict", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          todoText: project.payload.requirements,
+          todoUri: project.payload.briefUri,
+          submissionText: undefined,
+          submissionUri: project.payload.currentSubmissionUri || null,
+          rejectionReasons: project.payload.rejectionReasons || ["Deliverable needs verification"],
+          milestoneIndex,
+          totalMilestones: project.payload.milestones.length,
+          milestoneSpec,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to run AI audit");
+      }
+      setVerdict(data);
+      localStorage.setItem(storageKey, JSON.stringify(data));
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t border-white/5 pt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-[11px] text-accent-soft hover:text-white transition-colors cursor-pointer outline-none select-none"
+      >
+        <Cpu className="h-3.5 w-3.5" />
+        <span>AI Arbitration / Audit</span>
+        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+
+      {open && (
+        <div className="mt-2 p-2.5 rounded-lg border border-white/5 bg-black/10 flex flex-col gap-2">
+          {verdict ? (
+            <div className="flex flex-col gap-2">
+              <div className={cn(
+                "p-2 rounded border text-[11px]",
+                verdict.rejectionValid
+                  ? "bg-amber-500/10 border-amber-500/20 text-amber-300"
+                  : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+              )}>
+                <p className="font-bold uppercase tracking-wider text-[9px] mb-0.5">
+                  AI Verdict ({Math.round(verdict.confidence * 100)}% confidence)
+                </p>
+                <p className="font-semibold mb-1">
+                  {verdict.rejectionValid
+                    ? "REJECTION JUSTIFIED → Work revision required."
+                    : "REJECTION UNJUSTIFIED → Release payout / pass milestone."}
+                </p>
+                <p className="text-[10px] text-text-secondary leading-relaxed">{verdict.summary}</p>
+              </div>
+
+              {verdict.checklist && verdict.checklist.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[9px] uppercase tracking-wider text-text-secondary font-bold">Requirements Checklist:</span>
+                  <ul className="flex flex-col gap-1">
+                    {verdict.checklist.map((item, idx) => (
+                      <li key={idx} className="text-[10px] flex items-start gap-1.5 bg-white/[0.01] p-1.5 rounded">
+                        <span className={item.met ? "text-emerald-400 font-bold shrink-0" : "text-amber-400 font-bold shrink-0"}>
+                          {item.met ? "✓" : "✗"}
+                        </span>
+                        <div className="flex-1">
+                          <p className="text-text-primary font-medium">{item.item}</p>
+                          <p className="text-text-secondary text-[9px] leading-normal">{item.evidence}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-2">
+              <p className="text-[11px] text-text-secondary mb-2">No AI audit record found for this milestone.</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={runAudit}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-1.5 text-[11px] h-7"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Running AI Audit...
+                  </>
+                ) : (
+                  "Run AI Audit Analysis"
+                )}
+              </Button>
+            </div>
+          )}
+
+          {error && (
+            <p className="text-[10px] text-red-400 font-medium">⚠️ Error: {error}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PENALTY = 0.1;
 
 function BrowseTab({
@@ -95,11 +246,11 @@ function BrowseTab({
   applyCmd,
   apply,
 }: {
-  postings: ReturnType<typeof useStreamQueries<typeof Vindex.ProjectPosting>>;
-  myApplications: ReturnType<typeof useStreamQueries<typeof Vindex.Application>>["contracts"];
+  postings: any;
+  myApplications: any[];
   presentationCid: string;
   setPresentationCid: (v: string) => void;
-  applyCmd: ReturnType<typeof useCommand>;
+  applyCmd: any;
   apply: (cid: string) => void;
 }) {
   return (
@@ -110,7 +261,7 @@ function BrowseTab({
           <p className="text-[12px] text-text-secondary">No postings visible to you.</p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {postings.contracts.map((p) => (
+            {postings.contracts.map((p: any) => (
               <li key={p.contractId} className="flex flex-col gap-2 rounded-lg border border-white/8 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-[13px] text-text-primary font-medium">{p.payload.requirements}</p>
@@ -372,7 +523,7 @@ function WorkTab({
   deliverableCid: string;
   setDeliverableCid: (v: string) => void;
   submitCmd: ReturnType<typeof useCommand>;
-  submit: (cid: string) => void;
+  submit: (cid: ContractId<Vindex.Project>) => void;
 }) {
   const hasActiveProject = myProjects.length > 0;
 
@@ -401,20 +552,24 @@ function WorkTab({
                     {p.payload.milestones.map((m: any, i: number) => {
                       const paid = i < idx;
                       const current = i === idx;
-                      return (
-                        <li key={i} className="flex items-center justify-between rounded-lg bg-white/[0.01] border border-white/5 px-3 py-2 text-[12px]">
-                          <span
-                            className={cn(
-                              "font-medium",
-                              paid ? "text-success" : current ? "text-accent-soft" : "text-text-secondary"
-                            )}
-                          >
-                            {paid ? "✓ paid" : current ? "▶ current" : "• upcoming"} · Milestone {i + 1}
-                            {m.isFinal ? " (final)" : ""}
-                          </span>
-                          <span className="font-mono text-text-primary font-semibold">{m.payment}</span>
+                        <li key={i} className="flex flex-col gap-1 rounded-lg bg-white/[0.01] border border-white/5 p-3 text-[12px]">
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={cn(
+                                "font-medium",
+                                paid ? "text-success" : current ? "text-accent-soft" : "text-text-secondary"
+                              )}
+                            >
+                              {paid ? "✓ paid" : current ? "▶ current" : "• upcoming"} · Milestone {i + 1}
+                              {m.isFinal ? " (final)" : ""}
+                            </span>
+                            <span className="font-mono text-text-primary font-semibold">{m.payment}</span>
+                          </div>
+
+                          {(paid || current) && (
+                            <AiAuditSection project={p} milestoneIndex={i} milestoneSpec={m} />
+                          )}
                         </li>
-                      );
                     })}
                   </ul>
                   <div className="flex justify-between items-center text-[12px] text-text-secondary mt-1">
@@ -591,7 +746,7 @@ export function WorkerPanel() {
   const apply = (postingCid: string) =>
     applyCmd
       .run(() =>
-        session!.ledger.exercise(Vindex.ProjectPosting.Apply, postingCid, {
+        session!.ledger.exercise(Vindex.ProjectPosting.Apply, postingCid as any, {
           applicant: party,
           presentationHash: presentationCid || "sha256:portfolio",
           presentationUri: presentationCid,
@@ -604,7 +759,9 @@ export function WorkerPanel() {
     planCmd
       .run(() => {
         if (payments.length === 0) throw new Error("Enter at least one milestone payment");
-        const maxSubmissions = Math.max(1, Math.floor(Number(maxSubText) || 1));
+        // Clamp to the investor's revision ceiling (maxRevisions) — the ledger rejects a higher value.
+        const cap = Math.max(1, Math.floor(Number(mandate.payload.maxRevisions) || 3));
+        const maxSubmissions = Math.min(cap, Math.max(1, Math.floor(Number(maxSubText) || 1)));
         const milestones = payments.map((pay, i) => ({
           deliverablesHash: `sha256:milestone-${i + 1}`,
           payment: num(pay),
@@ -624,7 +781,9 @@ export function WorkerPanel() {
     planCmd
       .run(() => {
         if (payments.length === 0) throw new Error("Enter at least one milestone payment");
-        const maxSubmissions = Math.max(1, Math.floor(Number(maxSubText) || 1));
+        // Clamp to the investor's revision ceiling (maxRevisions) — the ledger rejects a higher value.
+        const cap = Math.max(1, Math.floor(Number(plan.payload.maxRevisions) || 3));
+        const maxSubmissions = Math.min(cap, Math.max(1, Math.floor(Number(maxSubText) || 1)));
         const milestones = payments.map((pay, i) => ({
           deliverablesHash: `sha256:milestone-${i + 1}`,
           payment: num(pay),
@@ -645,7 +804,7 @@ export function WorkerPanel() {
       .run(() => session!.ledger.exercise(Vindex.WorkPlan.WithdrawPlan, plan.contractId, {}))
       .catch(() => undefined);
 
-  const submit = (projectCid: string) =>
+  const submit = (projectCid: ContractId<Vindex.Project>) =>
     submitCmd
       .run(() =>
         session!.ledger.exercise(Vindex.Project.SubmitMilestone, projectCid, {

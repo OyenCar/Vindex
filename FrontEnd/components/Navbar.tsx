@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion, useScroll, useMotionValueEvent } from "framer-motion";
-import { ArrowRight, FileText, Menu, X } from "lucide-react";
+import { ArrowRight, FileText, Menu, X, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -58,6 +58,35 @@ function Logo() {
   );
 }
 
+function ThemeToggle() {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("vindex-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = saved ? saved === "dark" : prefersDark;
+    setDark(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, []);
+
+  const toggle = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("vindex-theme", next ? "dark" : "light");
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border-light)] bg-[var(--surface)] text-[var(--text-primary)] hover:bg-[var(--surface-hover)] transition-colors shadow-sm cursor-pointer"
+      aria-label="Toggle theme"
+    >
+      {dark ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
+    </button>
+  );
+}
+
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -80,12 +109,7 @@ export function Navbar() {
       className="fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-4"
     >
       <nav
-        className={cn(
-          "flex w-full max-w-shell items-center justify-between rounded-2xl px-4 py-2.5 transition-all duration-500",
-          scrolled
-            ? "glass-strong shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)]"
-            : "border border-transparent bg-transparent",
-        )}
+        className="flex w-full max-w-shell items-center justify-between rounded-full px-6 py-2.5 glass-strong shadow-lg border border-[var(--border-light)] transition-all duration-300"
       >
         <a href="#" aria-label="Vindex home" className="shrink-0">
           <Logo />
@@ -113,6 +137,7 @@ export function Navbar() {
             <FileText className="h-4 w-4" />
             Documentation
           </a>
+          <ThemeToggle />
           <Link
             href="/app"
             className={buttonVariants({ variant: "primary", size: "sm" })}
@@ -125,7 +150,7 @@ export function Navbar() {
         <button
           onClick={() => setOpen(true)}
           aria-label="Open menu"
-          className="grid h-10 w-10 place-items-center rounded-xl text-text-primary md:hidden"
+          className="grid h-10 w-10 place-items-center rounded-full text-text-primary md:hidden hover:bg-[var(--surface-hover)] transition-colors"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -151,13 +176,16 @@ export function Navbar() {
             >
               <div className="mb-4 flex items-center justify-between">
                 <Logo />
-                <button
-                  onClick={() => setOpen(false)}
-                  aria-label="Close menu"
-                  className="grid h-10 w-10 place-items-center rounded-xl text-text-secondary hover:text-text-primary"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <ThemeToggle />
+                  <button
+                    onClick={() => setOpen(false)}
+                    aria-label="Close menu"
+                    className="grid h-10 w-10 place-items-center rounded-xl text-text-secondary hover:text-text-primary"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               {NAV_LINKS.map((link, i) => (

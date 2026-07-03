@@ -47,11 +47,18 @@ export function useStreamQueries<T extends object, K, I extends string>(
       setLive(true);
     });
     stream.on("close", (closeEvent) => {
+      setLive(false);
       // `@daml/ledger` auto-reconnects within reconnectThreshold; surface hard closes only.
       if (closeEvent.code !== 1000 && closeEvent.code !== 1001) {
+        // Hard close = the participant/ledger went away (e.g. the in-memory sandbox was
+        // restarted, resetting the ledger offset). Clear the stale active-contract set so the
+        // UI stops showing GHOST contracts from the dead session — otherwise a wiped ledger
+        // still renders old projects/vaults/AI verdicts that can no longer be acted on. On a
+        // real reconnect a fresh snapshot repopulates via "change".
         setError(`stream closed (${closeEvent.code})`);
+        setContracts([]);
+        setLoading(true);
       }
-      setLive(false);
     });
 
     return () => stream.close();

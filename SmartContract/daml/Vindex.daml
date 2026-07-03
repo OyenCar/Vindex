@@ -18,6 +18,14 @@
 --   Funds are abstracted as `amount : Decimal`. Every money-movement point is marked
 --   `MONEY MOVEMENT` and isolated inside `AssetVault` choices so a future Canton Token
 --   Standard swap touches ONLY the vault, never `Project` business logic.
+--
+-- ARBITER MODEL (v2, 2026-07-03 — BYOK):
+--   The AI arbiter is PURELY bring-your-own-key: the investor supplies their own model key and
+--   the AI runs OFF-ledger, billed to them. There is therefore NO on-ledger agent fee — the
+--   Agent Fee Vault, `agentOpCost`, the escalation `Spend`, the freeze-on-depletion logic and the
+--   `TopUp` governance are all removed. The Agent party remains a NEUTRAL oracle: it only commits
+--   the boolean `AgentVerdict` on-ledger. Liveness: if no verdict lands before `agentVerdictDeadline`
+--   a stalled dispute AUTO-ACCEPTS (pays the worker) — an unsubstantiated rejection loses.
 module Vindex where
 
 import DA.Time (RelTime, addRelTime)
@@ -44,8 +52,9 @@ data MStatus
   = Inactive | Active | Submitted | RejPending | Revision | Accepted | Completed | Failed
   deriving (Eq, Show)
 
--- | The kind of vault, used only for labelling / observability.
-data VaultType = BudgetV | CommitmentV | AgentFeeV
+-- | The kind of vault, used only for labelling / observability. (Agent-fee vault removed in v2:
+--   the arbiter is BYOK, so no fund ever moves for AI compute.)
+data VaultType = BudgetV | CommitmentV
   deriving (Eq, Show)
 
 -- | Reusable governance action payloads (locked decision 2: ALL investor-side actions are
@@ -54,7 +63,6 @@ data ProposalAction
   = SelectWinner Party  -- ^ choose the worker after presentations (discretionary vote)
   | ResolveContinue     -- ^ after a worker violation: advance to the next milestone
   | ResolveStop         -- ^ after a worker violation: settle + refund all vaults
-  | TopUp Decimal       -- ^ refill the Agent Fee Vault (unfreeze)
   deriving (Eq, Show)
 
 -- | Specification for one milestone. `violationPct` (p%) is in [0.0, 1.0].
@@ -84,7 +92,6 @@ data Contribution = Contribution
   with
     investor : Party
     projectFunding : Decimal
-    agentFeeFunding : Decimal
     weight : Decimal            -- ^ weighted-power basis (default = capital contribution)
   deriving (Eq, Show)
 
@@ -96,6 +103,11 @@ data Tally = Tally
     castPower : Decimal
     total : Decimal
   deriving (Eq, Show)
+
+-- | Protocol default revision ceiling (industry norm is 2-3 rounds). The investor may set a lower
+--   ceiling at post time; the worker's proposed `maxSubmissions` is clamped to it.
+defaultMaxRevisions : Int
+defaultMaxRevisions = 3
 
 -- ---------------------------------------------------------------------------
 -- Pure helper functions (advance / tally) — total, no partial crashes
@@ -174,22 +186,13 @@ template AssetVault
         assertMsg "Release: insufficient funds" (amount >= amt)
         create this with amount = amount - amt
 
-    -- MONEY MOVEMENT: spend/burn funds (Agent operating cost). If this fails the calling
-    -- action reverts => the contract FREEZES (locked decision 6).
+    -- MONEY MOVEMENT: spend/burn funds (e.g. a capped worker-violation penalty).
     choice Spend : ContractId AssetVault
       with amt : Decimal
       controller funders
       do
         assertMsg "Spend: insufficient funds" (amount >= amt)
         create this with amount = amount - amt
-
-    -- MONEY MOVEMENT: top up the vault (governance-gated upstream, locked decision 2/6).
-    choice VaultTopUp : ContractId AssetVault
-      with amt : Decimal
-      controller funders
-      do
-        assertMsg "TopUp: non-negative" (amt >= 0.0)
-        create this with amount = amount + amt
 
     -- MONEY MOVEMENT: settle/refund the whole vault to its funders; vault is consumed.
     choice Settle : Decimal
@@ -253,44 +256,44 @@ template InvestorParty
           votes = []
           deadline
 
-    -- Fund the vaults and publish the posting in one go.
-    -- OPEN POSTING: the job is NOT pinned to one hand-picked worker. `workerPool` is the
+    -- Fund the Budget Vault and publish the posting in one go.
+    -- OPEN POSTING: the job is NOT pinned to one hand-picked worker. `eligibleWorkers` is the
     -- marketplace audience — the registered worker parties who can SEE the posting and apply
     -- to it (Canton has no public/global read, so an explicit observer set is required). The
     -- investor does not choose a winner here; selection happens later by governance vote over
     -- whoever applied.
-    -- PLANNING SPLIT: the investor sets only the BUDGET ENVELOPE (a cap) and the required worker
-    -- stake. The detailed plan — how many milestones, the payment split, and the max submissions —
-    -- is authored by the WORKER after selection and then approved by the investor (see
-    -- PlanningMandate -> WorkPlan -> ApprovePlan). The overfund check (locked decision 7) is
-    -- therefore enforced at ApprovePlan, where the milestones finally exist.
+    -- PLANNING SPLIT: the investor sets only the BUDGET ENVELOPE (a cap), the required worker
+    -- stake, and the revision CEILING (`maxRevisions`). The detailed plan — how many milestones,
+    -- the payment split, and the max submissions — is authored by the WORKER after selection and
+    -- then approved by the investor (see PlanningMandate -> WorkPlan -> ApprovePlan). The overfund
+    -- check (locked decision 7) is therefore enforced at ApprovePlan, where the milestones exist.
+    -- v2: no Agent Fee Vault (the arbiter is BYOK / off-ledger).
     nonconsuming choice SetupAndPost
-        : (ContractId ProjectPosting, ContractId AssetVault, ContractId AssetVault)
+        : (ContractId ProjectPosting, ContractId AssetVault)
       with
         postingId : Text
         requirements : Text
         briefUri : Text            -- ^ IPFS CID of the off-ledger project brief/files ("" if none)
         budgetAmount : Decimal     -- ^ budget ENVELOPE (cap); the approved plan must fit within it
-        agentFeeAmount : Decimal
-        agentOpCost : Decimal
         commitmentRequired : Decimal  -- ^ worker stake the investor requires
+        maxRevisions : Int         -- ^ investor's revision ceiling (<=0 => protocol default of 3)
         recruitmentMode : Text
         eligibleWorkers : [Text]
         publicParty : Party
       controller admin
       do
         assertMsg "budget envelope must be positive" (budgetAmount > 0.0)
-        assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY" 
+        assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY"
           (recruitmentMode == "OPEN_POOL" || recruitmentMode == "INVITE_ONLY")
-          
+
         if recruitmentMode == "OPEN_POOL" then do
-          assertMsg "OPEN_POOL eligibleWorkers must be exactly ['Worker::*']" 
+          assertMsg "OPEN_POOL eligibleWorkers must be exactly ['Worker::*']"
             (eligibleWorkers == ["Worker::*"])
         else do
-          assertMsg "INVITE_ONLY cannot use wildcard Worker::*" 
+          assertMsg "INVITE_ONLY cannot use wildcard Worker::*"
             ("Worker::*" `notElem` eligibleWorkers)
           let validParties = concatMap (\t -> case partyFromText t of Some p -> [p]; None -> []) eligibleWorkers
-          assertMsg "Some eligible workers are not valid party IDs" 
+          assertMsg "Some eligible workers are not valid party IDs"
             (length validParties == length eligibleWorkers)
 
         let resolveParty (t : Text) : [Party] =
@@ -302,19 +305,15 @@ template InvestorParty
                   None -> []
         let resolvedWorkers = concatMap resolveParty eligibleWorkers
         let stake = members ++ (agent :: resolvedWorkers)
-        
+        -- Clamp the revision ceiling to the protocol default when unset/invalid.
+        let revisionCap = if maxRevisions <= 0 then defaultMaxRevisions else maxRevisions
+
         -- MONEY MOVEMENT: create the Budget Vault (funder side = Investor Party members).
         budget <- create AssetVault with
           vaultType = BudgetV
           funders = members
           stakeholders = stake
           amount = budgetAmount
-        -- MONEY MOVEMENT: create the Agent Fee Vault (funder side = Investor Party members).
-        agentFee <- create AssetVault with
-          vaultType = AgentFeeV
-          funders = members
-          stakeholders = stake
-          amount = agentFeeAmount
         posting <- create ProjectPosting with
           postingId
           investorPartyCid = self
@@ -325,13 +324,12 @@ template InvestorParty
           requirements
           briefUri
           budgetVault = budget
-          agentFeeVault = agentFee
-          agentOpCost
           commitmentRequired
+          maxRevisions = revisionCap
           recruitmentMode
           eligibleWorkers
           publicParty
-        pure (posting, budget, agentFee)
+        pure (posting, budget)
 
 -- | Propose-accept join flow. The invitee must explicitly accept to become a signatory.
 --   NOTE (documented limitation): invites must be issued/accepted sequentially — each accept
@@ -400,9 +398,8 @@ template ProjectPosting
     requirements : Text
     briefUri : Text
     budgetVault : ContractId AssetVault
-    agentFeeVault : ContractId AssetVault
-    agentOpCost : Decimal
     commitmentRequired : Decimal
+    maxRevisions : Int            -- ^ investor's revision ceiling; worker's plan is clamped to it
     recruitmentMode : Text        -- ^ "OPEN_POOL" or "INVITE_ONLY"
     eligibleWorkers : [Text]       -- ^ "Worker::*" or explicit party ids
     publicParty : Party
@@ -434,18 +431,18 @@ template ProjectPosting
                 [single] -> T.isPrefixOf "Worker" single
                 displayName :: _ -> displayName == "Worker"
                 [] -> False
-        
+
         assertMsg "applicant must be a Worker party" (isWorkerParty applicant)
-        
-        assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY" 
+
+        assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY"
           (recruitmentMode == "OPEN_POOL" || recruitmentMode == "INVITE_ONLY")
-          
+
         if recruitmentMode == "OPEN_POOL" then
           pure ()
         else
-          assertMsg "applicant is not in the eligible list" 
+          assertMsg "applicant is not in the eligible list"
             ((partyToText applicant) `elem` eligibleWorkers)
-        
+
         create Application with
           members
           applicant
@@ -485,9 +482,8 @@ template ProjectPosting
           requirements
           briefUri
           budgetVault
-          agentFeeVault
-          agentOpCost
           commitmentRequired
+          maxRevisions
 
     choice EditPostingDescription : ContractId ProjectPosting
       with
@@ -505,7 +501,6 @@ template ProjectPosting
       do
         assertMsg "actor must be a member" (actor `elem` members)
         _ <- exercise budgetVault Settle
-        _ <- exercise agentFeeVault Settle
         pure ()
 
 -- ---------------------------------------------------------------------------
@@ -597,15 +592,15 @@ template PlanningMandate
     requirements : Text            -- ^ the investor's project description / to-do (always on-ledger)
     briefUri : Text
     budgetVault : ContractId AssetVault
-    agentFeeVault : ContractId AssetVault
-    agentOpCost : Decimal
     commitmentRequired : Decimal
+    maxRevisions : Int             -- ^ investor's revision ceiling (worker's plan is clamped to it)
   where
     signatory members
     observer worker, agent
 
     -- Worker authors the plan: the milestones (count + payment split + windows) and the max
-    -- submissions. This is the SOW the investor will approve.
+    -- submissions. This is the SOW the investor will approve. `maxSubmissions` is clamped to the
+    -- investor's `maxRevisions` ceiling.
     choice ProposePlan : ContractId WorkPlan
       with
         milestones : [MilestoneSpec]
@@ -614,6 +609,8 @@ template PlanningMandate
       do
         assertMsg "plan must have at least one milestone" (not (null milestones))
         assertMsg "max submissions must be positive" (maxSubmissions > 0)
+        assertMsg "max submissions exceeds the investor's revision ceiling"
+          (maxSubmissions <= maxRevisions)
         create WorkPlan with
           investorPartyCid
           members
@@ -626,16 +623,14 @@ template PlanningMandate
           milestones
           maxSubmissions
           budgetVault
-          agentFeeVault
-          agentOpCost
           commitmentRequired
+          maxRevisions
 
-    -- Investor backs out before any plan is agreed; refund the reserved vaults to the members.
+    -- Investor backs out before any plan is agreed; refund the reserved vault to the members.
     choice CancelMandate : ()
       controller members
       do
         _ <- exercise budgetVault Settle
-        _ <- exercise agentFeeVault Settle
         pure ()
 
 -- | The worker's authored plan (the SOW). Co-signed by members + worker. The investor reviews it
@@ -656,9 +651,8 @@ template WorkPlan
     milestones : [MilestoneSpec]
     maxSubmissions : Int
     budgetVault : ContractId AssetVault
-    agentFeeVault : ContractId AssetVault
-    agentOpCost : Decimal
     commitmentRequired : Decimal
+    maxRevisions : Int
   where
     signatory members, worker
     observer agent
@@ -699,10 +693,9 @@ template WorkPlan
           submissionCount = 0
           maxSubmissions
           workerDeadline = addRelTime now first.workerWindow
-          agentOpCost
+          agentVerdictDeadline = None
           budgetVault
           commitmentVault = commitment
-          agentFeeVault
           paidOut = 0.0
           currentSubmissionHash = None
           currentSubmissionUri = None
@@ -724,9 +717,8 @@ template WorkPlan
           requirements
           briefUri
           budgetVault
-          agentFeeVault
-          agentOpCost
           commitmentRequired
+          maxRevisions
 
     -- Worker withdraws their plan (to revise before the investor rules).
     choice WithdrawPlan : ContractId PlanningMandate
@@ -742,9 +734,8 @@ template WorkPlan
           requirements
           briefUri
           budgetVault
-          agentFeeVault
-          agentOpCost
           commitmentRequired
+          maxRevisions
 
     -- Choice for worker to update/re-submit their plan, replacing the old one.
     choice ProposePlanAgain : ContractId WorkPlan
@@ -755,6 +746,8 @@ template WorkPlan
       do
         assertMsg "plan must have at least one milestone" (not (null newMilestones))
         assertMsg "max submissions must be positive" (newMaxSubmissions > 0)
+        assertMsg "max submissions exceeds the investor's revision ceiling"
+          (newMaxSubmissions <= maxRevisions)
         create this with
           milestones = newMilestones
           maxSubmissions = newMaxSubmissions
@@ -769,8 +762,7 @@ template Settlement
     reason : Text
     refundedBudget : Decimal
     refundedCommitment : Decimal
-    refundedAgentFee : Decimal
-    totalPaidOut : Decimal      -- ^ everything that ever left a vault to a party (worker/investor/agent)
+    totalPaidOut : Decimal      -- ^ everything that ever left a vault to a party (worker/investor)
   where
     signatory members
     observer worker, agent
@@ -795,10 +787,9 @@ template Project
     submissionCount : Int
     maxSubmissions : Int
     workerDeadline : Time
-    agentOpCost : Decimal
+    agentVerdictDeadline : Optional Time    -- ^ Some while RejPending: deadline for the Agent to rule
     budgetVault : ContractId AssetVault
     commitmentVault : ContractId AssetVault
-    agentFeeVault : ContractId AssetVault
     paidOut : Decimal
     currentSubmissionHash : Optional Text
     currentSubmissionUri : Optional Text    -- ^ IPFS CID of the latest deliverable the Agent judges
@@ -810,9 +801,9 @@ template Project
     ensure (not (null milestones)) && (not (null members)) && (currentIndex >= 0)
 
     -- Worker submits the current milestone. ARCHITECTURE B: a submission is FREE — no Agent
-    -- validation and no Agent fee is consumed here. The Agent is invoked (and paid) only when a
-    -- rejection is escalated to it (see FinalizeReview REJECT path). The happy path never touches
-    -- the Agent: investor ACCEPT or inactivity/quorum AUTO-ACCEPT releases payment with zero AI.
+    -- validation and no fee is consumed here. The Agent is invoked only when a rejection is
+    -- escalated to it (see FinalizeReview REJECT path). The happy path never touches the Agent:
+    -- investor ACCEPT or inactivity/quorum AUTO-ACCEPT releases payment with zero AI.
     choice SubmitMilestone : ContractId Project
       with
         deliverableHash : Text
@@ -869,16 +860,15 @@ template Project
                 None -> abort "Reject passed: structured rejection reasons required first"
                 Some reasons -> do
                   archive reviewCid
-                  -- MONEY MOVEMENT + AGENT OP (architecture B): the dispute is escalated to the AI
-                  -- Agent NOW, so the Agent fee is consumed NOW. If the Agent Fee Vault cannot pay,
-                  -- `Spend` aborts => the rejection cannot be escalated => whole tx reverts => FREEZE
-                  -- (locked decision 6: never auto-accept on depletion; resume via a top-up vote).
-                  nAgent <- exercise agentFeeVault (Spend with amt = agentOpCost)
+                  -- v2: escalation is FREE on-ledger (arbiter is BYOK / off-ledger). We only start
+                  -- the verdict clock: if the Agent never rules before `agentVerdictDeadline`, the
+                  -- dispute auto-accepts (ResolveStalePending) so an investor cannot stall the
+                  -- worker's payment by withholding a key.
+                  m <- getMilestoneU this
                   cid <- create this with
                     status = RejPending
                     rejectionReasons = Some reasons
-                    agentFeeVault = nAgent
-                    paidOut = paidOut + agentOpCost   -- the agent op is paid to the Agent
+                    agentVerdictDeadline = Some (addRelTime now m.reviewWindow)
                   pure (Some cid)
             else if now >= r.deadline
               then do
@@ -887,7 +877,8 @@ template Project
                 acceptAndAdvance this 0.0
               else abort "no decision yet and review deadline not reached"
 
-    -- AI Agent verdict on a passing rejection — FINAL AUTHORITY (locked decision 11).
+    -- AI Agent verdict on a passing rejection — FINAL AUTHORITY (locked decision 11). The AI runs
+    -- OFF-ledger (BYOK); the neutral Agent party only commits the boolean here.
     choice AgentVerdict : Optional (ContractId Project)
       with rejectionValid : Bool
       controller agent
@@ -896,13 +887,31 @@ template Project
         if rejectionValid
           then do
             -- Rejection VALID => worker revises; resubmission opens a new voting cycle.
-            cid <- create this with status = Revision, rejectionReasons = None
+            cid <- create this with
+              status = Revision
+              rejectionReasons = None
+              agentVerdictDeadline = None
             pure (Some cid)
           else do
             -- Rejection INVALID => INVESTOR-PARTY VIOLATION: worker gets p% penalty PLUS full
             -- milestone payment; milestone auto-accepted; advance.
             m <- getMilestoneU this
-            acceptAndAdvance (this with rejectionReasons = None) (m.payment * m.violationPct)
+            acceptAndAdvance (this with rejectionReasons = None, agentVerdictDeadline = None) (m.payment * m.violationPct)
+
+    -- LIVENESS (v2): a RejPending dispute that the Agent never ruled on within `agentVerdictDeadline`
+    -- AUTO-ACCEPTS — the worker is paid the milestone (no penalty). An unsubstantiated rejection
+    -- loses, so reject-then-withhold-key stalling is pointless. Callable by any member or the worker.
+    choice ResolveStalePending : Optional (ContractId Project)
+      with actor : Party
+      controller actor
+      do
+        assertMsg "actor must be a member or the worker" (actor `elem` members || actor == worker)
+        assertMsg "not awaiting agent verdict" (status == RejPending)
+        now <- getTime
+        case agentVerdictDeadline of
+          None -> abort "no verdict deadline set"
+          Some d -> assertMsg "verdict deadline not reached" (now > d)
+        acceptAndAdvance (this with rejectionReasons = None, agentVerdictDeadline = None) 0.0
 
     -- Worker missed the worker deadline => WORKER VIOLATION.
     choice WorkerViolation : ContractId Project
@@ -958,24 +967,6 @@ template Project
             pure None
           _ -> abort "proposal action is not Continue/Stop"
 
-    -- GOVERNANCE-GATED (locked decision 2/6): top up the Agent Fee Vault to unfreeze.
-    choice TopUpAgentFee : ContractId Project
-      with
-        actor : Party
-        proposalCid : ContractId GovernanceProposal
-      controller actor
-      do
-        assertMsg "actor must be a member" (actor `elem` members)
-        prop <- fetch proposalCid
-        assertMsg "proposal not passed" (proposalPassed config contributions prop.votes)
-        amt <- case prop.action of
-          TopUp a -> pure a
-          _ -> abort "proposal action is not TopUp"
-        archive proposalCid
-        -- MONEY MOVEMENT: governance-approved top-up of the Agent Fee Vault.
-        na <- exercise agentFeeVault (VaultTopUp with amt)
-        create this with agentFeeVault = na
-
 -- ---------------------------------------------------------------------------
 -- Project helpers (advance / settle) — kept at module level for reuse & testing
 -- ---------------------------------------------------------------------------
@@ -1009,6 +1000,7 @@ acceptAndAdvance p bonus = do
         currentIndex = p.currentIndex + 1
         submissionCount = 0
         workerDeadline = addRelTime now next.workerWindow   -- recompute worker deadline
+        agentVerdictDeadline = None
         budgetVault = nb
         paidOut = p.paidOut + paid
         currentSubmissionHash = None
@@ -1016,14 +1008,13 @@ acceptAndAdvance p bonus = do
         rejectionReasons = None
       pure (Some cid)
 
--- | Settle (refund) all three vaults and record the settlement. The `budgetVault` argument is
+-- | Settle (refund) both vaults and record the settlement. The `budgetVault` argument is
 --   passed explicitly because the caller may already hold an updated cid after a Release.
 finalSettle : Project -> ContractId AssetVault -> Decimal -> Text -> Update ()
 finalSettle p budgetCid extraPaid reason = do
   -- MONEY MOVEMENT: refund the unused reserve in each vault to its funders.
   rb <- exercise budgetCid (Settle)
   rc <- exercise p.commitmentVault (Settle)
-  ra <- exercise p.agentFeeVault (Settle)
   create Settlement with
     members = p.members
     worker = p.worker
@@ -1031,6 +1022,5 @@ finalSettle p budgetCid extraPaid reason = do
     reason
     refundedBudget = rb
     refundedCommitment = rc
-    refundedAgentFee = ra
     totalPaidOut = p.paidOut + extraPaid
   pure ()

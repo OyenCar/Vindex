@@ -1,6 +1,3 @@
-"use client";
-
-import { motion } from "framer-motion";
 import {
   Network,
   FileCode2,
@@ -49,27 +46,22 @@ export function TechStack() {
       </div>
 
       <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {STACK.map((t, i) => (
-          <motion.div
+        {STACK.map((t) => (
+          <div
             key={t.name}
-            initial={{ opacity: 0, y: 22 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-60px" }}
-            transition={{ duration: 0.55, delay: (i % 3) * 0.07, ease: [0.22, 1, 0.36, 1] }}
-            whileHover={{ y: -5 }}
-            className="glass group rounded-2xl p-5"
+            className="glass group rounded-2xl p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-glow-sm"
           >
             <div className="flex items-center justify-between">
               <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent/15 text-accent-soft transition-shadow group-hover:shadow-glow-sm">
                 <t.icon className="h-5 w-5" />
               </span>
-              <span className="rounded-full border border-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-text-secondary">
+              <span className="rounded-full border border-[var(--border-light)] px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-text-secondary">
                 {t.layer}
               </span>
             </div>
             <h3 className="mt-4 text-[16px] font-semibold text-text-primary">{t.name}</h3>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-text-secondary">{t.role}</p>
-          </motion.div>
+          </div>
         ))}
       </div>
     </section>

@@ -75,7 +75,7 @@ export function MetricCard({ metric, index }: { metric: Metric; index: number })
         <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-accent/20 blur-2xl opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
 
         <div className="mb-4 flex items-center gap-2.5">
-          <span className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-accent-soft">
+          <span className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--border-light)] bg-black/[0.03] dark:bg-white/[0.04] text-accent-soft">
             <Icon className="h-[18px] w-[18px]" />
           </span>
         </div>
