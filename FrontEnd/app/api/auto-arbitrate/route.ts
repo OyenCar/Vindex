@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { Vindex } from "@/lib/daml/vindex";
+import { unpackUri, decryptBytes } from "@/lib/crypto";
 
 export const runtime = "nodejs";
+
+// WebCrypto polyfill for Node < 20 (globalThis.crypto not always present) so decryptBytes works.
+if (!(globalThis as { crypto?: Crypto }).crypto) {
+  (globalThis as { crypto?: Crypto }).crypto = crypto.webcrypto as unknown as Crypto;
+}
 
 interface MilestoneSpecPayload {
   deliverablesHash?: string;
@@ -29,26 +35,59 @@ interface AutoArbitrateBody {
   aiProvider?: string;
   aiKey?: string;
   aiModel?: string;
+  // Multiple saved BYOK keys, ORDERED (active first, then fallbacks). Tried in order until one works.
+  aiKeys?: { provider: string; key: string; model?: string }[];
 }
 
 const GATEWAY = process.env.PINATA_GATEWAY ?? process.env.NEXT_PUBLIC_IPFS_GATEWAY ?? "https://gateway.pinata.cloud";
 const GATEWAY_TOKEN = process.env.PINATA_GATEWAY_TOKEN ?? "";
 const MODEL = (process.env.GEMINI_MODEL || process.env.OPENROUTER_MODEL || "gemini-2.0-flash").trim();
 
-async function fetchFromIpfs(cid: string): Promise<string> {
+async function fetchBytesFromIpfs(uri: string): Promise<Uint8Array> {
+  const { cid, keyB64 } = unpackUri(uri);
   if (cid.startsWith("local-")) {
     throw new Error("file stored with offline fallback — paste text instead");
   }
   const url = `${GATEWAY}/ipfs/${cid}${GATEWAY_TOKEN ? `?pinataGatewayToken=${GATEWAY_TOKEN}` : ""}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`could not fetch ${cid} from IPFS (${res.status})`);
-  return (await res.text()).slice(0, 20_000);
+  const buf = await res.arrayBuffer();
+  // Encrypted artifacts carry the key on-ledger (unpacked above) — decrypt to raw bytes.
+  return keyB64 ? await decryptBytes(buf, keyB64) : new Uint8Array(buf);
 }
 
-async function resolveText(text: string | undefined, uri: string | null | undefined, label: string): Promise<string> {
-  if (text && text.trim()) return text.trim();
-  if (uri && uri.trim()) return fetchFromIpfs(uri.trim());
-  throw new Error(`missing ${label}: provide text or IPFS CID`);
+async function fetchFromIpfs(uri: string): Promise<string> {
+  return new TextDecoder().decode(await fetchBytesFromIpfs(uri)).slice(0, 20_000);
+}
+
+/** Detect a common image type from magic bytes (the content-type is lost once encrypted). */
+function sniffImageMime(b: Uint8Array): string | null {
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b.length >= 3 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "image/gif";
+  if (
+    b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  ) return "image/webp";
+  return null;
+}
+
+/** Resolve the worker's submission as either TEXT or an IMAGE (data URL) for vision models. Pasted
+ *  text wins; otherwise fetch+decrypt the deliverable and sniff its type. */
+async function resolveSubmission(
+  text: string | undefined,
+  uri: string | null | undefined,
+): Promise<{ text?: string; imageDataUrl?: string }> {
+  if (text && text.trim()) return { text: text.trim() };
+  if (uri && uri.trim()) {
+    const bytes = await fetchBytesFromIpfs(uri.trim());
+    const mime = sniffImageMime(bytes);
+    if (mime) {
+      return { imageDataUrl: `data:${mime};base64,${Buffer.from(bytes).toString("base64")}` };
+    }
+    return { text: new TextDecoder().decode(bytes).slice(0, 20_000) };
+  }
+  throw new Error("missing submission: provide text or IPFS CID");
 }
 
 async function resolveTodo(text: string | undefined, uri: string | null | undefined): Promise<string> {
@@ -119,6 +158,64 @@ function extractJson(raw: string): unknown {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+/** Default model per provider when the investor didn't specify one. */
+function providerDefaultModel(provider: string): string {
+  if (provider === "gemini") return process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
+  if (provider === "openrouter") return process.env.OPENROUTER_MODEL?.trim() || "google/gemma-2-9b-it:free";
+  return process.env.GROQ_MODEL?.trim() || "llama-3.3-70b-versatile";
+}
+
+/** Call ONE provider and return the raw model text. Throws on any failure so the caller can fall
+ *  back to the next key. The API key is used only here and is NEVER logged. */
+async function callModel(
+  provider: string,
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userContent: string,
+  imageDataUrl?: string,
+): Promise<string> {
+  // OpenAI-compatible providers (Groq, OpenRouter): attach an image as an image_url content part
+  // (requires a VISION-capable model, e.g. llama-4-scout / gpt-4o).
+  if (provider === "groq" || provider === "openrouter") {
+    const userMsg = imageDataUrl
+      ? { role: "user", content: [{ type: "text", text: userContent }, { type: "image_url", image_url: { url: imageDataUrl } }] }
+      : { role: "user", content: userContent };
+    const endpoint = provider === "groq"
+      ? "https://api.groq.com/openai/v1/chat/completions"
+      : "https://openrouter.ai/api/v1/chat/completions";
+    const headers: Record<string, string> = { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" };
+    if (provider === "openrouter") headers["X-Title"] = "Vindex";
+    const reqBody: Record<string, unknown> = { model, messages: [{ role: "system", content: systemPrompt }, userMsg] };
+    reqBody[provider === "groq" ? "max_completion_tokens" : "max_tokens"] = provider === "groq" ? 4096 : 1500;
+    const res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(reqBody) });
+    if (!res.ok) throw new Error(`${provider} ${res.status}: ${(await res.text().catch(() => "")).slice(0, 150)}`);
+    const data = await res.json();
+    if (data.error) throw new Error(`${provider}: ${data.error.message ?? "error"}`);
+    return data.choices?.[0]?.message?.content ?? "";
+  }
+  // Gemini: attach an image as inline_data.
+  const parts: Record<string, unknown>[] = [{ text: userContent }];
+  if (imageDataUrl) {
+    const m = imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } });
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      generationConfig: { responseMimeType: "application/json" },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text().catch(() => "")).slice(0, 150)}`);
+  const data = await res.json();
+  if (data.error) throw new Error(`Gemini: ${data.error.message ?? "error"}`);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+}
+
 function b64url(input: string): string {
   return Buffer.from(input).toString("base64url");
 }
@@ -164,49 +261,61 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "projectCid and agentParty are required" }, { status: 400 });
   }
 
-  // Provider selection — BYOK first: the investor's own key/provider (from the request) wins; else
-  // fall back to the server's env keys (dev convenience). Either way OUR server builds the prompt and
-  // commits the verdict, so the arbiter stays neutral (locked decision: neutral arbiter).
-  const byokKey = body.aiKey?.trim();
-  const byokProvider = (body.aiProvider ?? "").trim().toLowerCase();
-  let provider: "groq" | "openrouter" | "gemini";
-  let apiKey: string | undefined;
-  let usedModel: string;
-  if (byokKey) {
-    provider = byokProvider === "gemini" ? "gemini" : byokProvider === "openrouter" ? "openrouter" : "groq";
-    apiKey = byokKey;
-    usedModel =
-      body.aiModel?.trim() ||
-      (provider === "groq"
-        ? groqModel || "llama-3.3-70b-versatile"
-        : provider === "openrouter"
-          ? process.env.OPENROUTER_MODEL?.trim() || "google/gemma-2-9b-it:free"
-          : process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash");
-  } else if (groqModel && groqKey) {
-    provider = "groq";
-    apiKey = groqKey;
-    usedModel = groqModel;
-  } else if (MODEL.includes("/") || (openrouterKey && !geminiKey) || (openrouterKey && openrouterKey.startsWith("sk-or-"))) {
-    provider = "openrouter";
-    apiKey = openrouterKey;
-    usedModel = MODEL;
-  } else {
-    provider = "gemini";
-    apiKey = geminiKey || openrouterKey;
-    usedModel = MODEL;
+  // Build the ORDERED candidate list. BYOK keys (investor-provided, active first) are tried first;
+  // server-side env keys are ALWAYS appended as fallbacks so an invalid/expired BYOK key doesn't
+  // brick arbitration. The neutral server always builds the prompt + commits the verdict, so BYOK
+  // never affects arbiter neutrality.
+  const norm = (p?: string) => {
+    const s = (p ?? "").trim().toLowerCase();
+    return s === "gemini" || s === "openrouter" ? s : "groq";
+  };
+
+  // 1. BYOK candidates (investor's own keys, active first)
+  const byokList = (body.aiKeys ?? []).filter((k) => k && k.key && k.key.trim());
+  let candidates: { provider: string; apiKey: string; model: string }[] = [];
+  if (byokList.length > 0) {
+    candidates = byokList.map((k) => ({
+      provider: norm(k.provider),
+      apiKey: k.key.trim(),
+      model: k.model?.trim() || providerDefaultModel(norm(k.provider)),
+    }));
+  } else if (body.aiKey?.trim()) {
+    const p = norm(body.aiProvider);
+    candidates.push({ provider: p, apiKey: body.aiKey.trim(), model: body.aiModel?.trim() || providerDefaultModel(p) });
   }
-  if (!apiKey) {
+
+  // 2. Server-side env keys as fallbacks (always appended, deduplicated against BYOK)
+  const envCandidates: { provider: string; apiKey: string; model: string }[] = [];
+  if (groqModel && groqKey) {
+    envCandidates.push({ provider: "groq", apiKey: groqKey, model: groqModel });
+  }
+  if (openrouterKey) {
+    envCandidates.push({ provider: "openrouter", apiKey: openrouterKey, model: process.env.OPENROUTER_MODEL?.trim() || MODEL });
+  }
+  if (geminiKey) {
+    envCandidates.push({ provider: "gemini", apiKey: geminiKey, model: process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash" });
+  }
+  // Deduplicate: don't add an env key if the investor already supplied the exact same key
+  const existingKeys = new Set(candidates.map((c) => c.apiKey));
+  for (const ec of envCandidates) {
+    if (!existingKeys.has(ec.apiKey)) {
+      candidates.push(ec);
+      existingKeys.add(ec.apiKey);
+    }
+  }
+
+  if (candidates.length === 0) {
     return NextResponse.json(
-      { error: "No AI key — supply your BYOK key, or set GROQ_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY." },
+      { error: "No AI key — add a key in Setup (BYOK), or set GROQ_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY." },
       { status: 503 },
     );
   }
 
   let todo: string;
-  let submission: string;
+  let sub: { text?: string; imageDataUrl?: string };
   try {
     todo = await resolveTodo(body.todoText, body.todoUri);
-    submission = await resolveText(body.submissionText, body.submissionUri, "submission");
+    sub = await resolveSubmission(body.submissionText, body.submissionUri);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
   }
@@ -241,7 +350,11 @@ export async function POST(req: NextRequest) {
   promptParts.push("## PROJECT TO-DO LIST");
   promptParts.push(todo);
   promptParts.push("", "## WORKER SUBMISSION");
-  promptParts.push(submission);
+  promptParts.push(
+    sub.imageDataUrl
+      ? "(The deliverable is the ATTACHED IMAGE — evaluate it visually against the to-do list.)"
+      : sub.text ?? "(no submission content)",
+  );
   promptParts.push(
     "",
     "## INVESTOR REJECTION REASONS",
@@ -253,86 +366,30 @@ export async function POST(req: NextRequest) {
   );
 
   const userContent = promptParts.join("\n");
-  let aiRaw = "";
 
-  try {
-    if (provider === "groq") {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: usedModel,
-          max_completion_tokens: 4096,
-          messages: [
-            { role: "system", content: buildSystemPrompt(msIdx, msTotal) },
-            { role: "user", content: userContent },
-          ],
-        }),
-      });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        return NextResponse.json(
-          { error: `Groq API error (${res.status})${detail ? `: ${detail.slice(0, 200)}` : ""}` },
-          { status: 502 },
-        );
+  // Try each candidate in order until one returns a parseable verdict. Errors (bad key, rate limit,
+  // model down) fall through to the next key. Keys are never logged.
+  const systemPrompt = buildSystemPrompt(msIdx, msTotal);
+  let verdict: any = null;
+  let usedModel = "";
+  let lastErr = "no candidates";
+  for (const c of candidates) {
+    try {
+      const aiRaw = await callModel(c.provider, c.apiKey, c.model, systemPrompt, userContent, sub.imageDataUrl);
+      const parsed: any = extractJson(aiRaw);
+      if (typeof parsed.rejectionValid !== "boolean") {
+        lastErr = "model did not return a boolean 'rejectionValid'";
+        continue;
       }
-      const data = await res.json();
-      if (data.error) {
-        return NextResponse.json({ error: `Groq API: ${data.error.message ?? "unknown error"}` }, { status: 502 });
-      }
-      aiRaw = data.choices?.[0]?.message?.content ?? "";
-    } else if (provider === "openrouter") {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json",
-          "X-Title": "Vindex",
-        },
-        body: JSON.stringify({
-          model: usedModel,
-          max_tokens: 1500,
-          messages: [
-            { role: "system", content: buildSystemPrompt(msIdx, msTotal) },
-            { role: "user", content: userContent },
-          ],
-        }),
-      });
-      if (!res.ok) {
-        return NextResponse.json({ error: `OpenRouter API error (${res.status})` }, { status: 502 });
-      }
-      const data = await res.json();
-      aiRaw = data.choices?.[0]?.message?.content ?? "";
-    } else {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${usedModel}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: userContent }] }],
-          systemInstruction: { parts: [{ text: buildSystemPrompt(msIdx, msTotal) }] },
-          generationConfig: { responseMimeType: "application/json" },
-        }),
-      });
-      if (!res.ok) {
-        return NextResponse.json({ error: `Gemini API error (${res.status})` }, { status: 502 });
-      }
-      const data = await res.json();
-      aiRaw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      verdict = parsed;
+      usedModel = c.model;
+      break;
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
     }
-  } catch (e) {
-    return NextResponse.json({ error: `failed to reach AI API: ${e instanceof Error ? e.message : e}` }, { status: 502 });
   }
-
-  let verdict: any;
-  try {
-    verdict = extractJson(aiRaw);
-  } catch {
-    return NextResponse.json({ error: "could not parse the AI verdict" }, { status: 502 });
-  }
-
-  if (typeof verdict.rejectionValid !== "boolean") {
-    return NextResponse.json({ error: "AI verdict missing 'rejectionValid'" }, { status: 502 });
+  if (!verdict) {
+    return NextResponse.json({ error: `AI arbitration failed (all keys): ${lastErr}` }, { status: 502 });
   }
 
   // AI run succeeded! Now execute Vindex.Project.AgentVerdict choice on the ledger

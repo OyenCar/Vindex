@@ -28,8 +28,8 @@ data Ctx = Ctx
 -- | Build a ready-to-run single-investor project (party of one) with the given milestones.
 --   v2: no agent-fee args — the arbiter is BYOK / off-ledger.
 setupSingle
-  :  [MilestoneSpec] -> Decimal -> Decimal -> Script Ctx
-setupSingle milestones budgetAmount commitmentRequired = do
+  :  [MilestoneSpec] -> Decimal -> Decimal -> Decimal -> Script Ctx
+setupSingle milestones budgetAmount commitmentRequired latePenaltyPct = do
   i1 <- allocateParty "Investor1"
   worker <- allocateParty "Worker"
   agent <- allocateParty "Agent"
@@ -55,6 +55,8 @@ setupSingle milestones budgetAmount commitmentRequired = do
           budgetAmount = budgetAmount
           commitmentRequired = commitmentRequired
           maxRevisions = 5
+          latePenaltyPct = latePenaltyPct
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker]
           publicParty = publicParty)
@@ -118,6 +120,8 @@ testHappyPathMulti = do
           budgetAmount = 3600.0
           commitmentRequired = 500.0
           maxRevisions = 3
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker, partyToText other]
           publicParty = publicParty)
@@ -138,12 +142,12 @@ testHappyPathMulti = do
   r1 <- nextReview i1
   r1a <- submit i1 $ exerciseCmd r1 (CastVote with voter = i1, vote = ACCEPT)
   r1b <- submit i2 $ exerciseCmd r1a (CastVote with voter = i2, vote = ACCEPT)
-  Some proj2 <- submit i1 $ exerciseCmd proj1 (FinalizeReview with actor = i1, reviewCid = r1b)
+  Some proj2 <- submit i1 $ exerciseCmd proj1 (FinalizeReview with actor = i1, reviewCid = r1b, waiveLatePenalty = False)
   -- Milestone 2 (final): submit, then AUTO-ACCEPT on inactivity (no votes, deadline passes).
   proj3 <- submit worker $ exerciseCmd proj2 (SubmitMilestone with deliverableHash = "d2", deliverableUri = "")
   r2 <- nextReview i1
   passTime (hours 25)
-  None <- submit i1 $ exerciseCmd proj3 (FinalizeReview with actor = i1, reviewCid = r2)
+  None <- submit i1 $ exerciseCmd proj3 (FinalizeReview with actor = i1, reviewCid = r2, waiveLatePenalty = False)
   -- Money invariant after completion.
   s <- onlySettlement i1
   -- initial = budget 3600 + commitment 500 = 4100
@@ -173,6 +177,8 @@ testOverfundRejected = do
           budgetAmount = 1000.0
           commitmentRequired = 100.0
           maxRevisions = 3
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker]
           publicParty = publicParty)
@@ -221,18 +227,18 @@ testVotingModels = do
 
 testValidRejectionRevision : Script ()
 testValidRejectionRevision = do
-  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 500.0
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 500.0 0.0
   proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1", deliverableUri = "")
   r0 <- nextReview ctx.i1
   r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = REJECT)
   r2 <- submit ctx.i1 $ exerciseCmd r1 (SetRejectionReasons with actor = ctx.i1, reasons = ["incomplete feature"])
-  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2, waiveLatePenalty = False)
   -- Agent rules the rejection VALID -> worker revises.
   Some proj3 <- submit ctx.agent $ exerciseCmd proj2 (AgentVerdict with rejectionValid = True)
   proj4 <- submit ctx.worker $ exerciseCmd proj3 (SubmitMilestone with deliverableHash = "h2", deliverableUri = "")
   rr <- nextReview ctx.i1
   rr1 <- submit ctx.i1 $ exerciseCmd rr (CastVote with voter = ctx.i1, vote = ACCEPT)
-  None <- submit ctx.i1 $ exerciseCmd proj4 (FinalizeReview with actor = ctx.i1, reviewCid = rr1)
+  None <- submit ctx.i1 $ exerciseCmd proj4 (FinalizeReview with actor = ctx.i1, reviewCid = rr1, waiveLatePenalty = False)
   s <- onlySettlement ctx.i1
   -- initial = 1200 + 500 = 1700
   assertInvariant s 1700.0
@@ -244,12 +250,12 @@ testValidRejectionRevision = do
 
 testInvestorViolation : Script ()
 testInvestorViolation = do
-  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 500.0
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 500.0 0.0
   proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1", deliverableUri = "")
   r0 <- nextReview ctx.i1
   r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = REJECT)
   r2 <- submit ctx.i1 $ exerciseCmd r1 (SetRejectionReasons with actor = ctx.i1, reasons = ["bad faith nitpick"])
-  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2, waiveLatePenalty = False)
   -- Agent rules the rejection INVALID -> investor-party violation; worker gets 1000 + 100 bonus.
   None <- submit ctx.agent $ exerciseCmd proj2 (AgentVerdict with rejectionValid = False)
   s <- onlySettlement ctx.i1
@@ -266,7 +272,7 @@ testWorkerViolationStop : Script ()
 testWorkerViolationStop = do
   let m1 = oneMilestone False 1000.0 0.2 (hours 1)
       m2 = oneMilestone True  1000.0 0.2 (hours 1)
-  ctx <- setupSingle [m1, m2] 2400.0 500.0
+  ctx <- setupSingle [m1, m2] 2400.0 500.0 0.0
   passTime (hours 2)
   projF <- submit ctx.i1 $ exerciseCmd ctx.proj (WorkerViolation with actor = ctx.i1)
   now <- getTime
@@ -286,12 +292,12 @@ testWorkerViolationStop = do
 
 testStalePendingAutoAccept : Script ()
 testStalePendingAutoAccept = do
-  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 500.0
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 48)] 1200.0 500.0 0.0
   proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1", deliverableUri = "")
   r0 <- nextReview ctx.i1
   r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = REJECT)
   r2 <- submit ctx.i1 $ exerciseCmd r1 (SetRejectionReasons with actor = ctx.i1, reasons = ["disputed but never arbitrated"])
-  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2)
+  Some proj2 <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r2, waiveLatePenalty = False)
   -- Agent never rules; the verdict deadline (finalize time + reviewWindow = 24h) passes.
   passTime (hours 25)
   -- Worker triggers the stale-pending auto-accept -> paid the milestone, no penalty.
@@ -331,6 +337,8 @@ testEditAndTakeDownPosting = do
           budgetAmount = 1200.0
           commitmentRequired = 500.0
           maxRevisions = 3
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker]
           publicParty = publicParty)
@@ -388,6 +396,8 @@ testProposePlanAgain = do
           budgetAmount = 2000.0
           commitmentRequired = 500.0
           maxRevisions = 5
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker]
           publicParty = publicParty)
@@ -450,6 +460,8 @@ testDuplicateApplyRejected = do
           budgetAmount = 1200.0
           commitmentRequired = 500.0
           maxRevisions = 3
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker]
           publicParty = publicParty)
@@ -495,6 +507,8 @@ testDynamicPrefixApply = do
           budgetAmount = 1200.0
           commitmentRequired = 500.0
           maxRevisions = 3
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "INVITE_ONLY"
           eligibleWorkers = [partyToText worker, partyToText i1] -- worker is in the pool, worker2 is NOT
           publicParty = publicParty)
@@ -512,6 +526,8 @@ testDynamicPrefixApply = do
           budgetAmount = 1200.0
           commitmentRequired = 500.0
           maxRevisions = 3
+          latePenaltyPct = 0.0
+          maxWorkerWindow = days 7
           recruitmentMode = "OPEN_POOL"
           eligibleWorkers = ["Worker::*"]
           publicParty = publicParty)
@@ -525,6 +541,61 @@ testDynamicPrefixApply = do
   -- i1 is in the pool but starts with "Investor1" (not "Worker") -> Fails in both
   submitMultiMustFail [i1] [publicParty] $
     exerciseCmd posting2 (Apply with applicant = i1, presentationHash = "p3", presentationUri = "", contactLink = "l3")
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 12. Late submission → penalty from the Commitment Vault at acceptance (v3)
+-- ---------------------------------------------------------------------------
+
+testLatePenalty : Script ()
+testLatePenalty = do
+  -- 20% late penalty; 1-hour window; worker submits AFTER it (late is now ALLOWED).
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 1)] 1200.0 500.0 0.2
+  passTime (hours 2)
+  proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1", deliverableUri = "")
+  r0 <- nextReview ctx.i1
+  r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = ACCEPT)
+  None <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r1, waiveLatePenalty = False)
+  s <- onlySettlement ctx.i1
+  -- payment 1000 released; late penalty 1000*0.2 = 200 from commitment (500) -> investor.
+  assertMsg "late penalty taken from commitment" (s.refundedCommitment == 300.0)
+  assertMsg "paid out = payment + late penalty" (s.totalPaidOut == 1200.0)
+  assertInvariant s 1700.0
+  pure ()
+
+testLatePenaltyWaived : Script ()
+testLatePenaltyWaived = do
+  -- Same late submission, but the investor WAIVES the fee (technical-issue forgiveness).
+  ctx <- setupSingle [oneMilestone True 1000.0 0.1 (hours 1)] 1200.0 500.0 0.2
+  passTime (hours 2)
+  proj1 <- submit ctx.worker $ exerciseCmd ctx.proj (SubmitMilestone with deliverableHash = "h1", deliverableUri = "")
+  r0 <- nextReview ctx.i1
+  r1 <- submit ctx.i1 $ exerciseCmd r0 (CastVote with voter = ctx.i1, vote = ACCEPT)
+  None <- submit ctx.i1 $ exerciseCmd proj1 (FinalizeReview with actor = ctx.i1, reviewCid = r1, waiveLatePenalty = True)
+  s <- onlySettlement ctx.i1
+  assertMsg "waived -> commitment fully refunded" (s.refundedCommitment == 500.0)
+  assertMsg "waived -> paid out = payment only" (s.totalPaidOut == 1000.0)
+  assertInvariant s 1700.0
+  pure ()
+
+-- ---------------------------------------------------------------------------
+-- 13. Abandonment: the investor manually marks the project failed — the SINGLE
+--     reputation-negative event. Not deadline-gated (works with no passTime).
+-- ---------------------------------------------------------------------------
+
+testMarkFailedAbandonment : Script ()
+testMarkFailedAbandonment = do
+  -- Worker never delivers; the investor marks the project abandoned. No passTime needed
+  -- (MarkFailed is manual, not deadline-gated), so this fires under static-time too.
+  ctx <- setupSingle [oneMilestone True 1000.0 0.2 (hours 1)] 1200.0 500.0 0.0
+  submit ctx.i1 $ exerciseCmd ctx.proj (MarkFailed with actor = ctx.i1)
+  s <- onlySettlement ctx.i1
+  assertMsg "abandonment records the 'Abandoned' bad settlement" (s.reason == "Abandoned")
+  -- penalty = min(1000*0.2, 500) = 200 forfeited from commitment; 300 refunded.
+  assertMsg "commitment forfeited by 200" (s.refundedCommitment == 300.0)
+  assertMsg "budget fully refunded (nothing delivered)" (s.refundedBudget == 1200.0)
+  assertMsg "paid out = forfeited stake" (s.totalPaidOut == 200.0)
+  assertInvariant s 1700.0
   pure ()
 
 -- ---------------------------------------------------------------------------

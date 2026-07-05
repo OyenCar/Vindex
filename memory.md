@@ -14,6 +14,11 @@
 > corrections (repo layout, package id, toolchain, dev script, templates, AI) are inline where
 > critical; the authoritative CURRENT state + the 2026-07-03 audit findings are in **§13**. When
 > §0–§12 conflict with §13, **§13 wins**.
+>
+> 🟢 **NEXT SESSION — RESUME HERE:** read **`DEADLINE_PENALTY_REPUTATION.md` → "⭐ STATUS — RESUME
+> HERE"** first. It has the current package id (`a51d5397…`), what's DONE (investor-set deadline/late
+> penalty terms), the prioritized NEXT list (reputation Step 3, abandonment, wall-clock ops), the
+> gotchas, and the parked threads. Also see `UI_UX_AUDIT.md`.
 
 ---
 
@@ -59,9 +64,14 @@ D:\code progression\web3'\hackathon\Vindex\   (SINGLE git repo at root)
 
 ### 0.3 Daml package identity (ground truth from codegen)
 
-- Package id (DAR, CURRENT after v2): `67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5`
-  (hardcoded at `FrontEnd/daml.js/vindex-0.1.0/lib/index.js` `exports.packageId`). Was `29513a7a…`
-  before the v2 agent-fee-removal refactor. Changes on any Daml recompile → must re-run `daml codegen js`.
+- Package id (DAR, CURRENT): `51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed`
+  (prev `a51d5397…` before the `Project.MarkFailed` abandonment choice)
+  (hardcoded at `FrontEnd/daml.js/vindex-0.1.0/lib/index.js` `exports.packageId`). History: `29513a7a…`
+  (v1) → `67fbcd23…` (v2 agent-fee removal) → `5998c4ad…` (v3 late-submission penalty). Changes on any
+  Daml recompile → must re-run `daml codegen js`.
+- **v3 (2026-07-04):** late submission allowed (no hard deadline block); investor-set `latePenaltyPct`
+  (posting→project); `submittedLate` flagged at submit; late fee charged at acceptance from the
+  Commitment Vault (capped) with `FinalizeReview waiveLatePenalty`. See `DEADLINE_PENALTY_REPUTATION.md`.
 - Template ids: `67fbcd23…a32ea5:Vindex:InvestorParty`.
 - **v2 shipped (2026-07-03):** agent fee removed (BYOK arbiter), `Project.agentVerdictDeadline` +
   `ResolveStalePending` (stale dispute → auto-accept pays worker), `ProjectPosting.maxRevisions`

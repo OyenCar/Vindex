@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { useStreamQueries } from "@/lib/daml/useStreamQueries";
 import { useCommand } from "@/lib/daml/useCommand";
@@ -8,10 +8,10 @@ import { TxStatus } from "@/components/daml/TxStatus";
 import { FileUpload } from "@/components/daml/FileUpload";
 import { Button } from "@/components/ui/button";
 import { damlConfig } from "@/lib/daml/config";
-import { ipfsUrl } from "@/lib/daml/storage";
-import { Vindex, num, hours, STATUS_LABEL } from "@/lib/daml/vindex";
+import { ipfsUrl, openEncrypted } from "@/lib/daml/storage";
+import { Vindex, num, hours, days, STATUS_LABEL } from "@/lib/daml/vindex";
 import { cn } from "@/lib/utils";
-import { Info, Settings, ShieldAlert, Award, ChevronDown, ChevronUp, Cpu, Loader2 } from "lucide-react";
+import { Info, Settings, ShieldAlert, Award, ChevronDown, ChevronUp, Cpu, Loader2, Bell } from "lucide-react";
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
@@ -97,19 +97,42 @@ interface AiVerdict {
   rejectionAssessment?: { reason: string; justified: boolean; note: string }[];
 }
 
+// ─── One-time BYOK setup (multiple keys, session-only) ────────────────────────
+
+/** One saved BYOK entry: a provider + optional model override + the secret key. */
+interface AiKeyEntry {
+  id: string;
+  provider: string; // "groq" | "gemini" | "openrouter"
+  model: string; // "" = provider default
+  key: string;
+}
+
+// Persisted in sessionStorage ONLY (survives reloads within the tab, gone when it closes) — the
+// keys are secrets, so they never touch localStorage/disk and are never written on-ledger.
+const SETUP_STORAGE_KEY = "vindex:setup";
+
+function loadSetup(): { agent?: string; keys: AiKeyEntry[]; activeId: string } {
+  if (typeof window === "undefined") return { keys: [], activeId: "" };
+  try {
+    const raw = window.sessionStorage.getItem(SETUP_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore malformed */
+  }
+  return { keys: [], activeId: "" };
+}
+
 function AiAuditSection({
   project,
   milestoneIndex,
   milestoneSpec,
-  aiProvider,
-  aiKey,
+  aiKeys,
   onResolveStale,
 }: {
   project: any;
   milestoneIndex: number;
   milestoneSpec: any;
-  aiProvider?: string;
-  aiKey?: string;
+  aiKeys?: { provider: string; key: string; model?: string }[];
   onResolveStale?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -152,8 +175,7 @@ function AiAuditSection({
           milestoneIndex,
           totalMilestones: project.payload.milestones.length,
           milestoneSpec,
-          aiProvider,
-          aiKey: aiKey?.trim() || undefined,
+          aiKeys,
         }),
       });
       const data = await res.json();
@@ -290,6 +312,7 @@ function AiAuditSection({
 const INVESTOR_TABS = [
   { id: "post", label: "Post Job" },
   { id: "monitor", label: "Monitor" },
+  { id: "setup", label: "Setup" },
 ] as const;
 
 type InvestorTab = "setup" | "post" | "monitor";
@@ -318,12 +341,10 @@ function TabBar({
         >
           {t.label}
           {badges?.[t.id] ? (
-            <span className={cn(
-              "inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[9px] font-black",
-              active === t.id ? "bg-white text-[var(--accent)]" : "bg-[var(--accent)] text-white"
-            )}>
-              {badges[t.id]}
-            </span>
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]"
+              title="Pending activity"
+            />
           ) : null}
         </button>
       ))}
@@ -340,14 +361,17 @@ function SetupTab({
   setAgent,
   budget,
   setBudget,
-  aiProvider,
-  setAiProvider,
-  aiKey,
-  setAiKey,
+  aiKeys,
+  setAiKeys,
+  activeKeyId,
+  setActiveKeyId,
   createParty,
   createCmd,
   setNewPartyMode,
 }: any) {
+  const [draftProvider, setDraftProvider] = useState("groq");
+  const [draftModel, setDraftModel] = useState("");
+  const [draftKey, setDraftKey] = useState("");
   const budgetOk = Number(budget) > 0;
   const formReady = agent.trim().length > 0 && budgetOk;
 
@@ -373,26 +397,6 @@ function SetupTab({
             </div>
 
             <NumField label="Budget funding" value={budget} onChange={setBudget} placeholder="e.g. 4000" />
-
-            {/* BYOK: the investor brings their own AI provider key. Session-only; used server-side
-                for a single arbitration call and never written on-ledger. */}
-            <div className="border-2 border-[var(--border-light)] p-3.5 flex flex-col gap-2 rounded-xl">
-              <span className="text-[12px] font-black uppercase tracking-wider text-[var(--text-primary)]">
-                Arbiter AI Key (BYOK)
-              </span>
-              <p className="text-[11px] text-[var(--text-secondary)]">
-                Bring your own model key — it pays for disputes you escalate. Session-only, never stored.
-              </p>
-              <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Provider</span>
-                <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="brutal-input">
-                  <option value="groq">Groq</option>
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openrouter">OpenRouter</option>
-                </select>
-              </label>
-              <Field label="API key" value={aiKey} onChange={setAiKey} placeholder="optional; falls back to server key" />
-            </div>
             <Button onClick={createParty} disabled={!formReady || createCmd.phase === "submitting"}>
               Create Investor Party
             </Button>
@@ -417,6 +421,80 @@ function SetupTab({
             </Button>
           </Card>
         )}
+
+        {/* BYOK keys — ONE-TIME setup, shown regardless of party state; reused by every job. */}
+        <Card title="Arbiter AI Keys (BYOK)">
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            Save your own model keys once — reused for every job. Active key rules disputes; the rest
+            auto-fallback. Session-only, never stored on disk or on-ledger.
+          </p>
+          {aiKeys.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {aiKeys.map((k: AiKeyEntry) => (
+                <li key={k.id} className="flex items-center gap-2 rounded-lg border border-[var(--border-light)] bg-black/[0.02] dark:bg-white/[0.03] px-2.5 py-1.5 text-[11px]">
+                  <input
+                    type="radio"
+                    name="activeAiKey"
+                    checked={activeKeyId === k.id}
+                    onChange={() => setActiveKeyId(k.id)}
+                    title="Use as the active arbiter key"
+                    className="cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-semibold text-text-primary uppercase">{k.provider}</span>
+                    <span className="text-text-secondary"> · {k.model || "default model"}</span>
+                    <div className="font-mono text-[10px] text-text-secondary truncate">
+                      {k.key ? `${k.key.slice(0, 6)}…${k.key.slice(-4)}` : "(empty)"}
+                    </div>
+                  </div>
+                  {activeKeyId === k.id && (
+                    <span className="text-[9px] font-black uppercase text-emerald-400">active</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAiKeys(aiKeys.filter((x: AiKeyEntry) => x.id !== k.id));
+                      if (activeKeyId === k.id) setActiveKeyId("");
+                    }}
+                    className="text-text-secondary hover:text-red-400 px-1 cursor-pointer"
+                    title="Remove"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex flex-col gap-2 border-t border-[var(--border-light)] pt-2">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Provider</span>
+                <select value={draftProvider} onChange={(e) => setDraftProvider(e.target.value)} className="brutal-input">
+                  <option value="groq">Groq</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+              </label>
+              <Field label="Model (optional)" value={draftModel} onChange={setDraftModel} placeholder="e.g. llama-3.3-70b-versatile" />
+            </div>
+            <Field label="API key" value={draftKey} onChange={setDraftKey} placeholder="paste provider key" />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={!draftKey.trim()}
+              onClick={() => {
+                const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                setAiKeys([...aiKeys, { id, provider: draftProvider, model: draftModel.trim(), key: draftKey.trim() }]);
+                if (!activeKeyId) setActiveKeyId(id);
+                setDraftModel("");
+                setDraftKey("");
+              }}
+            >
+              + Add key
+            </Button>
+          </div>
+        </Card>
       </div>
 
       {/* Right Col: Setup Instructions */}
@@ -457,13 +535,19 @@ function PostTab({
   newWorkerInput,
   setNewWorkerInput,
   addWorker,
+  addWorkerParty,
   removeWorker,
+  trustedWorkers = [],
   budget,
   setBudget,
   commitment,
   setCommitment,
   maxRevisions,
   setMaxRevisions,
+  latePenalty,
+  setLatePenalty,
+  deadlineDays,
+  setDeadlineDays,
   fundAndPost,
   postCmd,
   editingPostingCid,
@@ -564,6 +648,28 @@ function PostTab({
                     Invite Only is active — add at least one worker party below so they can see and apply to this job.
                   </p>
                 )}
+                {trustedWorkers.filter((w: string) => !workers.includes(w)).length > 0 && (
+                  <div className="flex flex-col gap-1.5 border-t border-[var(--border-light)] pt-2 mt-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                      ★ Trusted collaborators — completed a project with you
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {trustedWorkers
+                        .filter((w: string) => !workers.includes(w))
+                        .map((w: string) => (
+                          <button
+                            key={w}
+                            type="button"
+                            onClick={() => addWorkerParty(w)}
+                            title={w}
+                            className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-mono text-emerald-300 hover:bg-emerald-500/20 cursor-pointer transition-colors"
+                          >
+                            + {w.slice(0, 16)}…
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-2 mt-1">
                   <input
                     value={newWorkerInput}
@@ -583,7 +689,11 @@ function PostTab({
               <NumField label="Budget envelope (cap)" value={budget} onChange={setBudget} placeholder="e.g. 4000" />
               <NumField label="Required worker stake" value={commitment} onChange={setCommitment} placeholder="e.g. 500" />
             </div>
-            <NumField label="Max revision rounds (ceiling)" value={maxRevisions} onChange={setMaxRevisions} placeholder="e.g. 3" />
+            <div className="grid grid-cols-2 gap-2">
+              <NumField label="Max revision rounds (ceiling)" value={maxRevisions} onChange={setMaxRevisions} placeholder="e.g. 3" />
+              <NumField label="Late penalty (% of milestone, 0 = none)" value={latePenalty} onChange={setLatePenalty} placeholder="e.g. 10" />
+            </div>
+            <NumField label="Deadline per milestone (max days)" value={deadlineDays} onChange={setDeadlineDays} placeholder="e.g. 7" />
             <p className="text-[11px] text-text-secondary">
               You fund the budget <span className="text-text-primary">envelope</span>, set the worker
               stake, and cap how many revision rounds the worker may propose. After you select a worker,
@@ -690,9 +800,9 @@ function PostTab({
                                   {a.payload.applicant}
                                 </span>
                                 {ipfsUrl(a.payload.presentationUri) ? (
-                                  <a href={ipfsUrl(a.payload.presentationUri)!} target="_blank" rel="noreferrer" className="text-[10px] text-accent-soft hover:underline mt-0.5">
+                                  <button type="button" onClick={() => openEncrypted(a.payload.presentationUri).catch(() => {})} className="text-[10px] text-accent-soft hover:underline mt-0.5 text-left cursor-pointer">
                                     View portfolio ↗
-                                  </a>
+                                  </button>
                                 ) : (
                                   a.payload.contactLink && (
                                     <span className="truncate text-[10px] text-text-secondary mt-0.5">{a.payload.contactLink}</span>
@@ -746,11 +856,11 @@ function MonitorTab({
   voteCmd,
   acceptSubmission,
   rejectSubmission,
+  markAbandoned,
   autoArbitrateStatus,
   autoArbitrateError,
   autoArbitrateVerdict,
-  aiProvider,
-  aiKey,
+  aiKeys,
   resolveStale,
   // SOW plan approvals sub section parameters:
   myMandates = [],
@@ -833,17 +943,27 @@ function MonitorTab({
                       Milestone #{Number(r.payload.milestoneIndex) + 1} · cycle {r.payload.cycle} · {r.payload.votes.length} vote(s)
                     </p>
                     {submissionUrl && (
-                      <a href={submissionUrl} target="_blank" rel="noreferrer" className="mb-3 inline-block text-[12px] text-accent-soft hover:underline">
+                      <button type="button" onClick={() => openEncrypted(proj.payload.currentSubmissionUri).catch(() => {})} className="mb-3 inline-block text-[12px] text-accent-soft hover:underline text-left cursor-pointer">
                         View submitted deliverable ↗
-                      </a>
+                      </button>
                     )}
                     {!proj ? (
                       <p className="text-[12px] text-text-secondary">Waiting for worker submission upload…</p>
                     ) : (
                       <div className="flex flex-col gap-3 border-t border-white/5 pt-3">
-                        <Button size="sm" onClick={() => acceptSubmission(r, proj)} disabled={busy || autoArbitrateStatus === "running"}>
+                        {proj.payload.submittedLate && (
+                          <p className="text-[11px] text-amber-300">
+                            ⏰ Submitted late — a late fee applies on acceptance (unless you waive it).
+                          </p>
+                        )}
+                        <Button size="sm" onClick={() => acceptSubmission(r, proj, false)} disabled={busy || autoArbitrateStatus === "running"}>
                           Accept &amp; Release Payment
                         </Button>
+                        {proj.payload.submittedLate && (
+                          <Button size="sm" variant="secondary" onClick={() => acceptSubmission(r, proj, true)} disabled={busy || autoArbitrateStatus === "running"}>
+                            Accept &amp; Waive Late Fee
+                          </Button>
+                        )}
                         <div className="flex flex-col gap-2 rounded-lg border border-white/8 bg-white/[0.02] p-2.5">
                           <span className="text-[11px] text-text-secondary font-medium">
                             Reject &amp; Escalate to AI Agent (one reason per line):
@@ -974,8 +1094,7 @@ function MonitorTab({
                                 project={p}
                                 milestoneIndex={i}
                                 milestoneSpec={m}
-                                aiProvider={aiProvider}
-                                aiKey={aiKey}
+                                aiKeys={aiKeys}
                                 onResolveStale={() => resolveStale(p)}
                               />
                             )}
@@ -983,15 +1102,42 @@ function MonitorTab({
                         );
                       })}
                     </ul>
+
+                    {/* Abandonment: the single reputation-negative action, available while the
+                        project is still open. Manual + not deadline-gated (works under static-time). */}
+                    {markAbandoned &&
+                      ["Active", "Submitted", "Revision", "RejPending"].includes(p.payload.status) && (
+                        <button
+                          type="button"
+                          onClick={() => markAbandoned(p)}
+                          disabled={voteCmd.phase === "submitting"}
+                          className="mt-1 w-full rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          Mark Abandoned (worker never delivered)
+                        </button>
+                      )}
                   </div>
                 );
               })}
-              {mySettlements.map((s: any) => (
-                <li key={s.contractId} className="flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2">
-                  <span className="text-text-secondary font-medium">✅ Settled · {s.payload.reason}</span>
-                  <span className="font-mono text-success font-bold">paid {s.payload.totalPaidOut}</span>
-                </li>
-              ))}
+              {mySettlements.map((s: any) => {
+                const abandoned = s.payload.reason === "Abandoned";
+                return (
+                  <li
+                    key={s.contractId}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border px-3 py-2",
+                      abandoned ? "border-red-500/20 bg-red-500/5" : "border-success/20 bg-success/5",
+                    )}
+                  >
+                    <span className="text-text-secondary font-medium">
+                      {abandoned ? "⛔ Abandoned" : `✅ Settled · ${s.payload.reason}`}
+                    </span>
+                    <span className={cn("font-mono font-bold", abandoned ? "text-red-400" : "text-success")}>
+                      paid {s.payload.totalPaidOut}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>
@@ -1072,14 +1218,16 @@ export function InvestorPanel() {
   const selectCmd = useCommand<unknown>();
   const planCmd = useCommand<unknown>();
 
-  const [agent, setAgent] = useState(damlConfig.parties.agent);
+  const [agent, setAgent] = useState(() => loadSetup().agent || damlConfig.parties.agent);
   const [budget, setBudget] = useState("4000");
   const [commitment, setCommitment] = useState("500");
   const [maxRevisions, setMaxRevisions] = useState("3");
-  // BYOK arbiter (v2): the investor supplies their own AI provider key; it is sent to
-  // /api/auto-arbitrate for a single call and is NEVER persisted (session-only state).
-  const [aiProvider, setAiProvider] = useState("groq");
-  const [aiKey, setAiKey] = useState("");
+  const [latePenalty, setLatePenalty] = useState("0"); // percent of milestone (0 = no late fee)
+  const [deadlineDays, setDeadlineDays] = useState("7"); // investor's per-milestone deadline ceiling
+  // BYOK arbiter (v2): the investor sets up multiple provider keys ONCE per session. The ACTIVE key
+  // arbitrates; the others are automatic fallbacks. Session-only (see loadSetup / SETUP_STORAGE_KEY).
+  const [aiKeys, setAiKeys] = useState<AiKeyEntry[]>(() => loadSetup().keys ?? []);
+  const [activeKeyId, setActiveKeyId] = useState<string>(() => loadSetup().activeId ?? "");
   const [reasonsText, setReasonsText] = useState("Deliverable does not meet the milestone spec");
   const [submissionPaste, setSubmissionPaste] = useState("");
   const [requirements, setRequirements] = useState("Build the Vindex milestone deliverables");
@@ -1097,9 +1245,33 @@ export function InvestorPanel() {
   const [autoArbitrateError, setAutoArbitrateError] = useState<string | null>(null);
   const [autoArbitrateVerdict, setAutoArbitrateVerdict] = useState<any | null>(null);
 
+  // Persist the one-time setup (agent + BYOK keys) to sessionStorage so every new job reuses it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(SETUP_STORAGE_KEY, JSON.stringify({ agent, keys: aiKeys, activeId: activeKeyId }));
+    } catch {
+      /* ignore */
+    }
+  }, [agent, aiKeys, activeKeyId]);
+
+  // Ordered candidate keys for arbitration: ACTIVE first, then the rest as fallbacks. The server
+  // tries them in order until one succeeds. Empty keys are dropped.
+  const orderedKeys = () => {
+    const active = aiKeys.find((k) => k.id === activeKeyId);
+    const rest = aiKeys.filter((k) => k.id !== activeKeyId);
+    return [...(active ? [active] : []), ...rest]
+      .filter((k) => k.key.trim())
+      .map((k) => ({ provider: k.provider, key: k.key.trim(), model: k.model.trim() || undefined }));
+  };
+
+  const addWorkerParty = (w: string) => {
+    const t = w.trim();
+    if (t && !workers.includes(t)) setWorkers([...workers, t]);
+  };
   const addWorker = () => {
-    const w = newWorkerInput.trim();
-    if (w && !workers.includes(w)) { setWorkers([...workers, w]); setNewWorkerInput(""); }
+    addWorkerParty(newWorkerInput);
+    setNewWorkerInput("");
   };
   const removeWorker = (w: string) => setWorkers(workers.filter((item) => item !== w));
 
@@ -1112,6 +1284,23 @@ export function InvestorPanel() {
     (v) => v.payload.funders.includes(party) || v.payload.stakeholders.includes(party),
   );
   const mySettlements = settlements.contracts.filter((s) => s.payload.members.includes(party));
+
+  // Reputation (Step 3, UI-derived — per-pair, Canton-private, no Daml). A worker is a "trusted
+  // collaborator" of THIS investor when they have a `Completed` settlement with the investor and no
+  // `Abandoned` one. Derived only from the investor's own visible settlements, so it never breaks
+  // Canton privacy. Feeds the INVITE_ONLY picker (fills `eligibleWorkers`).
+  const trustedWorkers = useMemo(() => {
+    const good: string[] = [];
+    const bad = new Set<string>();
+    for (const s of mySettlements) {
+      if (s.payload.reason === "Completed") {
+        if (!good.includes(s.payload.worker)) good.push(s.payload.worker);
+      } else if (s.payload.reason === "Abandoned") {
+        bad.add(s.payload.worker);
+      }
+    }
+    return good.filter((w) => !bad.has(w));
+  }, [mySettlements]);
   const myParties = parties.contracts.filter((c) => c.payload.members.includes(party));
   const myParty =
     (preferredPartyCid ? myParties.find((c) => c.contractId === preferredPartyCid) : undefined) ||
@@ -1162,6 +1351,8 @@ export function InvestorPanel() {
             budgetAmount: num(budget),
             commitmentRequired: num(commitment),
             maxRevisions: num(Math.max(1, Math.floor(Number(maxRevisions) || 3))),
+            latePenaltyPct: num(Math.min(1, Math.max(0, (Number(latePenalty) || 0) / 100))),
+            maxWorkerWindow: days(Math.max(1, Math.floor(Number(deadlineDays) || 7))),
             recruitmentMode: isOpenPool ? "OPEN_POOL" : "INVITE_ONLY",
             eligibleWorkers: isOpenPool ? ["Worker::*"] : workers,
             publicParty: damlConfig.parties.public,
@@ -1210,6 +1401,7 @@ export function InvestorPanel() {
   const acceptSubmission = (
     review: (typeof reviews.contracts)[number],
     proj: (typeof projects.contracts)[number],
+    waiveLatePenalty = false,
   ) =>
     voteCmd
       .run(async () => {
@@ -1221,7 +1413,7 @@ export function InvestorPanel() {
           });
           reviewCid = voted;
         }
-        return session!.ledger.exercise(Vindex.Project.FinalizeReview, proj.contractId, { actor: party, reviewCid });
+        return session!.ledger.exercise(Vindex.Project.FinalizeReview, proj.contractId, { actor: party, reviewCid, waiveLatePenalty });
       })
       .catch(() => undefined);
 
@@ -1231,6 +1423,16 @@ export function InvestorPanel() {
     voteCmd
       .run(() => session!.ledger.exercise(Vindex.Project.ResolveStalePending, proj.contractId, { actor: party }))
       .catch(() => undefined);
+
+  // Abandonment: the SINGLE reputation-negative action. Manual + not deadline-gated, so it works
+  // under static-time. Terminal — settles the project as "Abandoned" (the worker forfeits their
+  // capped stake). Irreversible, so confirm first.
+  const markAbandoned = (proj: (typeof projects.contracts)[number]) => {
+    if (!confirm("Mark this project ABANDONED? The worker forfeits their staked commitment (capped), the budget is refunded, and this records a permanent negative reputation mark. This cannot be undone.")) return;
+    voteCmd
+      .run(() => session!.ledger.exercise(Vindex.Project.MarkFailed, proj.contractId, { actor: party }))
+      .catch(() => undefined);
+  };
 
   const rejectSubmission = (
     review: (typeof reviews.contracts)[number],
@@ -1258,7 +1460,7 @@ export function InvestorPanel() {
         });
 
         // Finalize review (escalates status to RejPending on ledger)
-        const [finalizedCidOpt] = await session!.ledger.exercise(Vindex.Project.FinalizeReview, proj.contractId, { actor: party, reviewCid: withReasons });
+        const [finalizedCidOpt] = await session!.ledger.exercise(Vindex.Project.FinalizeReview, proj.contractId, { actor: party, reviewCid: withReasons, waiveLatePenalty: false });
 
         // Extract contract ID from ledger result
         const nextCid = (finalizedCidOpt as any)?.value || finalizedCidOpt;
@@ -1279,9 +1481,8 @@ export function InvestorPanel() {
             milestoneIndex: Number(proj.payload.currentIndex),
             totalMilestones: proj.payload.milestones.length,
             milestoneSpec: proj.payload.milestones[Number(proj.payload.currentIndex)],
-            // BYOK: the investor's own provider key (session-only). The server uses it neutrally.
-            aiProvider,
-            aiKey: aiKey.trim() || undefined,
+            // BYOK: the investor's saved keys (active first, then fallbacks). Server tries in order.
+            aiKeys: orderedKeys(),
           };
 
           const res = await fetch("/api/auto-arbitrate", {
@@ -1338,20 +1539,18 @@ export function InvestorPanel() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap border-b border-[var(--border-light)] pb-4">
+      <div className="sticky top-[72px] z-30 mb-6 flex items-center justify-between gap-4 flex-wrap border-b border-[var(--border-light)] bg-[var(--bg)]/90 backdrop-blur-sm pt-4 pb-4">
         <TabBar active={activeTab} onChange={setActiveTab} badges={badges} />
-
         <button
-          onClick={() => setActiveTab("setup")}
-          className={cn(
-            "p-2 rounded-xl border-2 transition-all duration-200 flex items-center justify-center cursor-pointer",
-            activeTab === "setup"
-              ? "bg-[var(--accent)] text-white border-[var(--accent)] shadow-glow-sm"
-              : "bg-black/5 dark:bg-white/5 text-[var(--text-secondary)] border-[var(--border-light)] hover:text-[var(--text-primary)] hover:border-[var(--border-light)] hover:bg-black/10 dark:hover:bg-white/10"
-          )}
-          title="Setup Investor Party"
+          type="button"
+          onClick={() => setActiveTab("monitor")}
+          title={pendingCount > 0 ? `${pendingCount} item(s) need your attention` : "No notifications"}
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border-light)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
         >
-          <Settings className="h-4 w-4" />
+          <Bell className="h-4 w-4" />
+          {pendingCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--bg)]" />
+          )}
         </button>
       </div>
 
@@ -1363,10 +1562,10 @@ export function InvestorPanel() {
           setAgent={setAgent}
           budget={budget}
           setBudget={setBudget}
-          aiProvider={aiProvider}
-          setAiProvider={setAiProvider}
-          aiKey={aiKey}
-          setAiKey={setAiKey}
+          aiKeys={aiKeys}
+          setAiKeys={setAiKeys}
+          activeKeyId={activeKeyId}
+          setActiveKeyId={setActiveKeyId}
           createParty={createParty}
           createCmd={createCmd}
           setNewPartyMode={setNewPartyMode}
@@ -1388,13 +1587,19 @@ export function InvestorPanel() {
           newWorkerInput={newWorkerInput}
           setNewWorkerInput={setNewWorkerInput}
           addWorker={addWorker}
+          addWorkerParty={addWorkerParty}
           removeWorker={removeWorker}
+          trustedWorkers={trustedWorkers}
           budget={budget}
           setBudget={setBudget}
           commitment={commitment}
           setCommitment={setCommitment}
           maxRevisions={maxRevisions}
           setMaxRevisions={setMaxRevisions}
+          latePenalty={latePenalty}
+          setLatePenalty={setLatePenalty}
+          deadlineDays={deadlineDays}
+          setDeadlineDays={setDeadlineDays}
           fundAndPost={fundAndPost}
           postCmd={postCmd}
           editingPostingCid={editingPostingCid}
@@ -1422,11 +1627,11 @@ export function InvestorPanel() {
           voteCmd={voteCmd}
           acceptSubmission={acceptSubmission}
           rejectSubmission={rejectSubmission}
+          markAbandoned={markAbandoned}
           autoArbitrateStatus={autoArbitrateStatus}
           autoArbitrateError={autoArbitrateError}
           autoArbitrateVerdict={autoArbitrateVerdict}
-          aiProvider={aiProvider}
-          aiKey={aiKey}
+          aiKeys={orderedKeys()}
           resolveStale={resolveStale}
           myMandates={myMandates}
           myPlans={myPlans}

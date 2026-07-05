@@ -33,8 +33,11 @@ is in‑memory, so stopping it wipes all contracts **and** the party ids.
 **Terminal A — Canton sandbox (leave running):**
 ```powershell
 cd "D:\code progression\web3'\hackathon\Vindex\SmartContract"
-daml sandbox --static-time --port 6865
+daml sandbox --port 6865
 # wait for: "Canton sandbox is ready."
+# WALL-CLOCK (no --static-time): getTime advances on its own, so worker deadlines fire live and
+# `submittedLate` becomes true in-app. Trade-off: the `daml script --static-time` advance-time demo
+# trick no longer works; `daml test` is unaffected (it uses its own in-memory static time).
 ```
 
 **Terminal B — upload contracts + allocate parties (run once per sandbox start):**

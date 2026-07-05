@@ -32,6 +32,16 @@ export declare const WorkerViolation:
 ;
 
 
+export declare type MarkFailed = {
+  actor: damlTypes.Party;
+};
+
+export declare const MarkFailed:
+  damlTypes.Serializable<MarkFailed> & {
+  }
+;
+
+
 export declare type ResolveStalePending = {
   actor: damlTypes.Party;
 };
@@ -55,6 +65,7 @@ export declare const AgentVerdict:
 export declare type FinalizeReview = {
   actor: damlTypes.Party;
   reviewCid: damlTypes.ContractId<MilestoneReview>;
+  waiveLatePenalty: boolean;
 };
 
 export declare const FinalizeReview:
@@ -90,6 +101,8 @@ export declare type Project = {
   maxSubmissions: damlTypes.Int;
   workerDeadline: damlTypes.Time;
   agentVerdictDeadline: damlTypes.Optional<damlTypes.Time>;
+  latePenaltyPct: damlTypes.Numeric;
+  submittedLate: boolean;
   budgetVault: damlTypes.ContractId<AssetVault>;
   commitmentVault: damlTypes.ContractId<AssetVault>;
   paidOut: damlTypes.Numeric;
@@ -104,11 +117,12 @@ export declare interface ProjectInterface {
   FinalizeReview: damlTypes.Choice<Project, FinalizeReview, damlTypes.Optional<damlTypes.ContractId<Project>>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
   ResolveAfterViolation: damlTypes.Choice<Project, ResolveAfterViolation, damlTypes.Optional<damlTypes.ContractId<Project>>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
   WorkerViolation: damlTypes.Choice<Project, WorkerViolation, damlTypes.ContractId<Project>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
+  MarkFailed: damlTypes.Choice<Project, MarkFailed, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
   SubmitMilestone: damlTypes.Choice<Project, SubmitMilestone, damlTypes.ContractId<Project>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
   Archive: damlTypes.Choice<Project, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Project, undefined>>;
 }
 export declare const Project:
-  damlTypes.Template<Project, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:Project'> &
+  damlTypes.Template<Project, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:Project'> &
   damlTypes.ToInterface<Project, never> &
   ProjectInterface;
 
@@ -135,7 +149,7 @@ export declare interface SettlementInterface {
   Archive: damlTypes.Choice<Settlement, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<Settlement, undefined>>;
 }
 export declare const Settlement:
-  damlTypes.Template<Settlement, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:Settlement'> &
+  damlTypes.Template<Settlement, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:Settlement'> &
   damlTypes.ToInterface<Settlement, never> &
   SettlementInterface;
 
@@ -202,6 +216,8 @@ export declare type WorkPlan = {
   budgetVault: damlTypes.ContractId<AssetVault>;
   commitmentRequired: damlTypes.Numeric;
   maxRevisions: damlTypes.Int;
+  latePenaltyPct: damlTypes.Numeric;
+  maxWorkerWindow: pkg733e38d36a2759688a4b2c4cec69d48e7b55ecc8dedc8067b815926c917a182a.DA.Time.Types.RelTime;
 };
 
 export declare interface WorkPlanInterface {
@@ -212,7 +228,7 @@ export declare interface WorkPlanInterface {
   WithdrawPlan: damlTypes.Choice<WorkPlan, WithdrawPlan, damlTypes.ContractId<PlanningMandate>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<WorkPlan, undefined>>;
 }
 export declare const WorkPlan:
-  damlTypes.Template<WorkPlan, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:WorkPlan'> &
+  damlTypes.Template<WorkPlan, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:WorkPlan'> &
   damlTypes.ToInterface<WorkPlan, never> &
   WorkPlanInterface;
 
@@ -257,6 +273,8 @@ export declare type PlanningMandate = {
   budgetVault: damlTypes.ContractId<AssetVault>;
   commitmentRequired: damlTypes.Numeric;
   maxRevisions: damlTypes.Int;
+  latePenaltyPct: damlTypes.Numeric;
+  maxWorkerWindow: pkg733e38d36a2759688a4b2c4cec69d48e7b55ecc8dedc8067b815926c917a182a.DA.Time.Types.RelTime;
 };
 
 export declare interface PlanningMandateInterface {
@@ -265,7 +283,7 @@ export declare interface PlanningMandateInterface {
   Archive: damlTypes.Choice<PlanningMandate, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<PlanningMandate, undefined>>;
 }
 export declare const PlanningMandate:
-  damlTypes.Template<PlanningMandate, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:PlanningMandate'> &
+  damlTypes.Template<PlanningMandate, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:PlanningMandate'> &
   damlTypes.ToInterface<PlanningMandate, never> &
   PlanningMandateInterface;
 
@@ -319,7 +337,7 @@ export declare interface MilestoneReviewInterface {
   Archive: damlTypes.Choice<MilestoneReview, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<MilestoneReview, undefined>>;
 }
 export declare const MilestoneReview:
-  damlTypes.Template<MilestoneReview, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:MilestoneReview'> &
+  damlTypes.Template<MilestoneReview, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:MilestoneReview'> &
   damlTypes.ToInterface<MilestoneReview, never> &
   MilestoneReviewInterface;
 
@@ -359,7 +377,7 @@ export declare interface GovernanceProposalInterface {
   Archive: damlTypes.Choice<GovernanceProposal, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<GovernanceProposal, undefined>>;
 }
 export declare const GovernanceProposal:
-  damlTypes.Template<GovernanceProposal, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:GovernanceProposal'> &
+  damlTypes.Template<GovernanceProposal, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:GovernanceProposal'> &
   damlTypes.ToInterface<GovernanceProposal, never> &
   GovernanceProposalInterface;
 
@@ -430,6 +448,8 @@ export declare type ProjectPosting = {
   budgetVault: damlTypes.ContractId<AssetVault>;
   commitmentRequired: damlTypes.Numeric;
   maxRevisions: damlTypes.Int;
+  latePenaltyPct: damlTypes.Numeric;
+  maxWorkerWindow: pkg733e38d36a2759688a4b2c4cec69d48e7b55ecc8dedc8067b815926c917a182a.DA.Time.Types.RelTime;
   recruitmentMode: string;
   eligibleWorkers: string[];
   publicParty: damlTypes.Party;
@@ -443,7 +463,7 @@ export declare interface ProjectPostingInterface {
   Archive: damlTypes.Choice<ProjectPosting, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<ProjectPosting, undefined>>;
 }
 export declare const ProjectPosting:
-  damlTypes.Template<ProjectPosting, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:ProjectPosting'> &
+  damlTypes.Template<ProjectPosting, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:ProjectPosting'> &
   damlTypes.ToInterface<ProjectPosting, never> &
   ProjectPostingInterface;
 
@@ -470,7 +490,7 @@ export declare interface ApplicationInterface {
   Archive: damlTypes.Choice<Application, pkgd14e08374fc7197d6a0de468c968ae8ba3aadbf9315476fd39071831f5923662.DA.Internal.Template.Archive, {}, Application.Key> & damlTypes.ChoiceFrom<damlTypes.Template<Application, Application.Key>>;
 }
 export declare const Application:
-  damlTypes.Template<Application, Application.Key, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:Application'> &
+  damlTypes.Template<Application, Application.Key, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:Application'> &
   damlTypes.ToInterface<Application, never> &
   ApplicationInterface;
 
@@ -517,7 +537,7 @@ export declare interface InvestorInviteInterface {
   DeclineInvite: damlTypes.Choice<InvestorInvite, DeclineInvite, {}, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<InvestorInvite, undefined>>;
 }
 export declare const InvestorInvite:
-  damlTypes.Template<InvestorInvite, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:InvestorInvite'> &
+  damlTypes.Template<InvestorInvite, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:InvestorInvite'> &
   damlTypes.ToInterface<InvestorInvite, never> &
   InvestorInviteInterface;
 
@@ -537,6 +557,8 @@ export declare type SetupAndPost = {
   budgetAmount: damlTypes.Numeric;
   commitmentRequired: damlTypes.Numeric;
   maxRevisions: damlTypes.Int;
+  latePenaltyPct: damlTypes.Numeric;
+  maxWorkerWindow: pkg733e38d36a2759688a4b2c4cec69d48e7b55ecc8dedc8067b815926c917a182a.DA.Time.Types.RelTime;
   recruitmentMode: string;
   eligibleWorkers: string[];
   publicParty: damlTypes.Party;
@@ -587,7 +609,7 @@ export declare interface InvestorPartyInterface {
   OpenProposal: damlTypes.Choice<InvestorParty, OpenProposal, damlTypes.ContractId<GovernanceProposal>, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<InvestorParty, undefined>>;
 }
 export declare const InvestorParty:
-  damlTypes.Template<InvestorParty, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:InvestorParty'> &
+  damlTypes.Template<InvestorParty, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:InvestorParty'> &
   damlTypes.ToInterface<InvestorParty, never> &
   InvestorPartyInterface;
 
@@ -644,7 +666,7 @@ export declare interface AssetVaultInterface {
   Settle: damlTypes.Choice<AssetVault, Settle, damlTypes.Numeric, undefined> & damlTypes.ChoiceFrom<damlTypes.Template<AssetVault, undefined>>;
 }
 export declare const AssetVault:
-  damlTypes.Template<AssetVault, undefined, '67fbcd23a83264f475310835addbb0ae4b60ad244d87dd8f5dc2e02765a32ea5:Vindex:AssetVault'> &
+  damlTypes.Template<AssetVault, undefined, '51e3659419aa5a4b3533c100b258787e7300ec054d94fbcc399c558fa2db67ed:Vindex:AssetVault'> &
   damlTypes.ToInterface<AssetVault, never> &
   AssetVaultInterface;
 

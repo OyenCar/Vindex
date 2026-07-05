@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { CheckCircle2, Loader2, Paperclip } from "lucide-react";
-import { uploadToIpfs, ipfsUrl } from "@/lib/daml/storage";
+import { uploadToIpfs, ipfsUrl, openEncrypted } from "@/lib/daml/storage";
+import { unpackUri } from "@/lib/crypto";
 
 /**
  * File picker that uploads to IPFS and reports the resulting CID up to the parent.
@@ -56,13 +57,13 @@ export function FileUpload({
       </div>
       {cid && (
         <span className="break-all text-[10.5px] text-text-secondary">
-          CID: <span className="font-mono text-text-primary">{cid}</span>
+          CID: <span className="font-mono text-text-primary">{unpackUri(cid).cid}</span>
           {url && (
             <>
               {" · "}
-              <a href={url} target="_blank" rel="noreferrer" className="text-accent-soft hover:underline">
+              <button type="button" onClick={() => openEncrypted(cid).catch(() => {})} className="text-accent-soft hover:underline cursor-pointer">
                 view
-              </a>
+              </button>
             </>
           )}
         </span>

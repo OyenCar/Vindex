@@ -277,12 +277,15 @@ template InvestorParty
         budgetAmount : Decimal     -- ^ budget ENVELOPE (cap); the approved plan must fit within it
         commitmentRequired : Decimal  -- ^ worker stake the investor requires
         maxRevisions : Int         -- ^ investor's revision ceiling (<=0 => protocol default of 3)
+        latePenaltyPct : Decimal   -- ^ investor's late-submission penalty rate, 0.0..1.0 (0 = none)
+        maxWorkerWindow : RelTime  -- ^ investor's deadline ceiling per milestone
         recruitmentMode : Text
         eligibleWorkers : [Text]
         publicParty : Party
       controller admin
       do
         assertMsg "budget envelope must be positive" (budgetAmount > 0.0)
+        assertMsg "late penalty must be in [0, 1]" (latePenaltyPct >= 0.0 && latePenaltyPct <= 1.0)
         assertMsg "recruitmentMode must be OPEN_POOL or INVITE_ONLY"
           (recruitmentMode == "OPEN_POOL" || recruitmentMode == "INVITE_ONLY")
 
@@ -326,6 +329,8 @@ template InvestorParty
           budgetVault = budget
           commitmentRequired
           maxRevisions = revisionCap
+          latePenaltyPct
+          maxWorkerWindow
           recruitmentMode
           eligibleWorkers
           publicParty
@@ -400,6 +405,8 @@ template ProjectPosting
     budgetVault : ContractId AssetVault
     commitmentRequired : Decimal
     maxRevisions : Int            -- ^ investor's revision ceiling; worker's plan is clamped to it
+    latePenaltyPct : Decimal      -- ^ investor's late-submission penalty rate (0 = none)
+    maxWorkerWindow : RelTime     -- ^ investor's deadline ceiling; each milestone window is clamped to it
     recruitmentMode : Text        -- ^ "OPEN_POOL" or "INVITE_ONLY"
     eligibleWorkers : [Text]       -- ^ "Worker::*" or explicit party ids
     publicParty : Party
@@ -484,6 +491,8 @@ template ProjectPosting
           budgetVault
           commitmentRequired
           maxRevisions
+          latePenaltyPct
+          maxWorkerWindow
 
     choice EditPostingDescription : ContractId ProjectPosting
       with
@@ -594,6 +603,8 @@ template PlanningMandate
     budgetVault : ContractId AssetVault
     commitmentRequired : Decimal
     maxRevisions : Int             -- ^ investor's revision ceiling (worker's plan is clamped to it)
+    latePenaltyPct : Decimal       -- ^ investor's late-submission penalty rate (0 = none)
+    maxWorkerWindow : RelTime      -- ^ investor's deadline ceiling (worker's windows clamped to it)
   where
     signatory members
     observer worker, agent
@@ -611,6 +622,8 @@ template PlanningMandate
         assertMsg "max submissions must be positive" (maxSubmissions > 0)
         assertMsg "max submissions exceeds the investor's revision ceiling"
           (maxSubmissions <= maxRevisions)
+        assertMsg "a milestone window exceeds the investor's deadline ceiling"
+          (all (\ms -> ms.workerWindow <= maxWorkerWindow) milestones)
         create WorkPlan with
           investorPartyCid
           members
@@ -625,6 +638,8 @@ template PlanningMandate
           budgetVault
           commitmentRequired
           maxRevisions
+          latePenaltyPct
+          maxWorkerWindow
 
     -- Investor backs out before any plan is agreed; refund the reserved vault to the members.
     choice CancelMandate : ()
@@ -653,6 +668,8 @@ template WorkPlan
     budgetVault : ContractId AssetVault
     commitmentRequired : Decimal
     maxRevisions : Int
+    latePenaltyPct : Decimal
+    maxWorkerWindow : RelTime
   where
     signatory members, worker
     observer agent
@@ -694,6 +711,8 @@ template WorkPlan
           maxSubmissions
           workerDeadline = addRelTime now first.workerWindow
           agentVerdictDeadline = None
+          latePenaltyPct
+          submittedLate = False
           budgetVault
           commitmentVault = commitment
           paidOut = 0.0
@@ -719,6 +738,8 @@ template WorkPlan
           budgetVault
           commitmentRequired
           maxRevisions
+          latePenaltyPct
+          maxWorkerWindow
 
     -- Worker withdraws their plan (to revise before the investor rules).
     choice WithdrawPlan : ContractId PlanningMandate
@@ -736,6 +757,8 @@ template WorkPlan
           budgetVault
           commitmentRequired
           maxRevisions
+          latePenaltyPct
+          maxWorkerWindow
 
     -- Choice for worker to update/re-submit their plan, replacing the old one.
     choice ProposePlanAgain : ContractId WorkPlan
@@ -748,6 +771,8 @@ template WorkPlan
         assertMsg "max submissions must be positive" (newMaxSubmissions > 0)
         assertMsg "max submissions exceeds the investor's revision ceiling"
           (newMaxSubmissions <= maxRevisions)
+        assertMsg "a milestone window exceeds the investor's deadline ceiling"
+          (all (\ms -> ms.workerWindow <= maxWorkerWindow) newMilestones)
         create this with
           milestones = newMilestones
           maxSubmissions = newMaxSubmissions
@@ -788,6 +813,8 @@ template Project
     maxSubmissions : Int
     workerDeadline : Time
     agentVerdictDeadline : Optional Time    -- ^ Some while RejPending: deadline for the Agent to rule
+    latePenaltyPct : Decimal                -- ^ investor's late-submission penalty rate (0 = none)
+    submittedLate : Bool                    -- ^ was the current (accepted) submission past workerDeadline?
     budgetVault : ContractId AssetVault
     commitmentVault : ContractId AssetVault
     paidOut : Decimal
@@ -813,7 +840,10 @@ template Project
         assertMsg "not in a submittable state" (status == Active || status == Revision)
         assertMsg "max submissions reached" (submissionCount < maxSubmissions)
         now <- getTime
-        assertMsg "worker deadline passed" (now <= workerDeadline)
+        -- v3: late submission is ALLOWED (a missed deadline can be a technical issue, not abandonment).
+        -- We only RECORD lateness here; the penalty (if the investor set a rate) is charged at
+        -- acceptance and can be waived. Work quality is judged separately by the review/AI.
+        let late = now > workerDeadline
         m <- getMilestoneU this
         -- Opens a fresh voting cycle. No money moves on submit.
         create MilestoneReview with
@@ -830,6 +860,7 @@ template Project
         create this with
           status = Submitted
           submissionCount = submissionCount + 1
+          submittedLate = late
           currentSubmissionHash = Some deliverableHash
           currentSubmissionUri = Some deliverableUri
 
@@ -839,6 +870,7 @@ template Project
       with
         actor : Party
         reviewCid : ContractId MilestoneReview
+        waiveLatePenalty : Bool    -- ^ investor forgives the late fee (e.g. a technical-issue delay)
       controller actor
       do
         assertMsg "actor must be a member" (actor `elem` members)
@@ -846,12 +878,19 @@ template Project
         r <- fetch reviewCid
         assertMsg "review/milestone mismatch" (r.milestoneIndex == currentIndex)
         now <- getTime
+        m <- getMilestoneU this
+        -- Late-submission penalty (v3): charged from the Commitment Vault at ACCEPTANCE when the
+        -- accepted deliverable was late and the investor set a rate — unless the investor waives it.
+        let latePenalty =
+              if submittedLate && latePenaltyPct > 0.0 && not waiveLatePenalty
+                then m.payment * latePenaltyPct
+                else 0.0
         let t = tally config contributions r.votes
         if t.acceptPower >= config.thresholdFraction * t.total
           then do
             -- ACCEPT threshold reached.
             archive reviewCid
-            acceptAndAdvance this 0.0
+            acceptAndAdvance this 0.0 latePenalty
           else if t.rejectPower >= config.thresholdFraction * t.total
                   && t.castPower >= config.quorumFraction * t.total
             then do
@@ -864,7 +903,6 @@ template Project
                   -- the verdict clock: if the Agent never rules before `agentVerdictDeadline`, the
                   -- dispute auto-accepts (ResolveStalePending) so an investor cannot stall the
                   -- worker's payment by withholding a key.
-                  m <- getMilestoneU this
                   cid <- create this with
                     status = RejPending
                     rejectionReasons = Some reasons
@@ -873,8 +911,9 @@ template Project
             else if now >= r.deadline
               then do
                 -- No decision before the deadline (inactivity / quorum not met): AUTO-ACCEPT.
+                -- A late submission still incurs the penalty here (no reviewer to waive it).
                 archive reviewCid
-                acceptAndAdvance this 0.0
+                acceptAndAdvance this 0.0 latePenalty
               else abort "no decision yet and review deadline not reached"
 
     -- AI Agent verdict on a passing rejection — FINAL AUTHORITY (locked decision 11). The AI runs
@@ -896,7 +935,7 @@ template Project
             -- Rejection INVALID => INVESTOR-PARTY VIOLATION: worker gets p% penalty PLUS full
             -- milestone payment; milestone auto-accepted; advance.
             m <- getMilestoneU this
-            acceptAndAdvance (this with rejectionReasons = None, agentVerdictDeadline = None) (m.payment * m.violationPct)
+            acceptAndAdvance (this with rejectionReasons = None, agentVerdictDeadline = None) (m.payment * m.violationPct) 0.0
 
     -- LIVENESS (v2): a RejPending dispute that the Agent never ruled on within `agentVerdictDeadline`
     -- AUTO-ACCEPTS — the worker is paid the milestone (no penalty). An unsubstantiated rejection
@@ -911,7 +950,27 @@ template Project
         case agentVerdictDeadline of
           None -> abort "no verdict deadline set"
           Some d -> assertMsg "verdict deadline not reached" (now > d)
-        acceptAndAdvance (this with rejectionReasons = None, agentVerdictDeadline = None) 0.0
+        acceptAndAdvance (this with rejectionReasons = None, agentVerdictDeadline = None) 0.0 0.0
+
+    -- ABANDONMENT (v3): the investor manually marks the worker as having abandoned the project.
+    -- This is the SINGLE reputation-negative event — it settles the project with reason "Abandoned"
+    -- (the one "bad" Settlement the UI-derived reputation counts against a worker; "Completed" is the
+    -- only "good" one). Manual + NOT deadline-gated, so it works in ANY time mode (static-time or
+    -- wall-clock) — unlike `WorkerViolation`, which a frozen clock can never trigger. The worker
+    -- forfeits their commitment stake as the abandonment penalty (capped at the vault balance) to the
+    -- investor; the budget reserve is refunded to the members. Terminal (no governance follow-up).
+    choice MarkFailed : ()
+      with actor : Party
+      controller actor
+      do
+        assertMsg "actor must be a member" (actor `elem` members)
+        assertMsg "project not in an open milestone" (status `elem` [Active, Submitted, Revision, RejPending])
+        m <- getMilestoneU this
+        cv <- fetch commitmentVault
+        -- MONEY MOVEMENT: abandonment penalty from the Commitment Vault to the investor, CAPPED.
+        let penalty = min (m.payment * m.violationPct) cv.amount
+        nc <- exercise commitmentVault (Spend with amt = penalty)
+        finalSettle (this with commitmentVault = nc) budgetVault penalty "Abandoned"
 
     -- Worker missed the worker deadline => WORKER VIOLATION.
     choice WorkerViolation : ContractId Project
@@ -957,6 +1016,7 @@ template Project
                   status = Active
                   currentIndex = currentIndex + 1
                   submissionCount = 0
+                  submittedLate = False
                   workerDeadline = addRelTime now next.workerWindow
                   currentSubmissionHash = None
                   currentSubmissionUri = None
@@ -982,15 +1042,20 @@ getMilestoneAtU p i = case getAt i p.milestones of
 
 -- | Pay the current milestone (payment + optional penalty bonus) and advance the state machine.
 --   `bonus` is the investor-violation penalty paid to the worker (0.0 on a normal accept).
-acceptAndAdvance : Project -> Decimal -> Update (Optional (ContractId Project))
-acceptAndAdvance p bonus = do
+acceptAndAdvance : Project -> Decimal -> Decimal -> Update (Optional (ContractId Project))
+acceptAndAdvance p bonus latePenalty = do
   m <- getMilestoneU p
-  -- MONEY MOVEMENT: release milestone payment (+ optional penalty) from Budget Vault to Worker.
+  -- MONEY MOVEMENT: late-submission penalty (if any) from the Commitment Vault to the investor,
+  -- capped at the vault balance. Spent funds count toward `paidOut` (they left a vault to a party).
+  cv <- fetch p.commitmentVault
+  let penalty = min latePenalty cv.amount
+  nc <- if penalty > 0.0 then exercise p.commitmentVault (Spend with amt = penalty) else pure p.commitmentVault
+  -- MONEY MOVEMENT: release milestone payment (+ optional investor-violation bonus) Budget -> Worker.
   nb <- exercise p.budgetVault (Release with amt = m.payment + bonus, beneficiary = p.worker)
   let paid = m.payment + bonus
   if m.isFinal
     then do
-      finalSettle p nb paid "Completed"
+      finalSettle (p with commitmentVault = nc) nb (paid + penalty) "Completed"
       pure None
     else do
       now <- getTime
@@ -999,10 +1064,12 @@ acceptAndAdvance p bonus = do
         status = Active
         currentIndex = p.currentIndex + 1
         submissionCount = 0
+        submittedLate = False
         workerDeadline = addRelTime now next.workerWindow   -- recompute worker deadline
         agentVerdictDeadline = None
         budgetVault = nb
-        paidOut = p.paidOut + paid
+        commitmentVault = nc
+        paidOut = p.paidOut + paid + penalty
         currentSubmissionHash = None
         currentSubmissionUri = None
         rejectionReasons = None

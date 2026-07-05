@@ -8,11 +8,11 @@ import { TxStatus } from "@/components/daml/TxStatus";
 import { FileUpload } from "@/components/daml/FileUpload";
 import { StatusBadge } from "@/components/daml/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { ipfsUrl } from "@/lib/daml/storage";
+import { ipfsUrl, openEncrypted } from "@/lib/daml/storage";
 import { Vindex, num, hours, days } from "@/lib/daml/vindex";
 import type { ContractId } from "@daml/types";
 import { cn } from "@/lib/utils";
-import { Info, Send, FileText, CheckCircle, ChevronDown, ChevronUp, Cpu, Loader2 } from "lucide-react";
+import { Info, Send, FileText, CheckCircle, ChevronDown, ChevronUp, Cpu, Loader2, Bell } from "lucide-react";
 
 // ─── Shared primitives ───────────────────────────────────────────────────────
 
@@ -60,24 +60,32 @@ type WorkerTab = (typeof WORKER_TABS)[number]["id"];
 function TabBar({
   active,
   onChange,
+  dots,
 }: {
   active: WorkerTab;
   onChange: (t: WorkerTab) => void;
+  dots?: Partial<Record<WorkerTab, boolean>>;
 }) {
   return (
-    <div className="mb-6 flex gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-full border border-[var(--border-light)] max-w-fit">
+    <div className="flex gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-full border border-[var(--border-light)] max-w-fit">
       {WORKER_TABS.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            "px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 rounded-full cursor-pointer",
+            "relative flex items-center justify-center gap-1.5 px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all duration-200 rounded-full cursor-pointer",
             active === t.id
               ? "bg-[var(--accent)] text-white shadow-sm"
               : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5",
           )}
         >
           {t.label}
+          {dots?.[t.id] ? (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]"
+              title="Pending activity"
+            />
+          ) : null}
         </button>
       ))}
     </div>
@@ -278,14 +286,13 @@ function BrowseTab({
                 </div>
 
                 {ipfsUrl(p.payload.briefUri) && (
-                  <a
-                    href={ipfsUrl(p.payload.briefUri)!}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[12px] text-accent-soft hover:underline w-fit"
+                  <button
+                    type="button"
+                    onClick={() => openEncrypted(p.payload.briefUri).catch(() => {})}
+                    className="text-[12px] text-accent-soft hover:underline w-fit text-left cursor-pointer"
                   >
                     View project brief ↗
-                  </a>
+                  </button>
                 )}
 
                 <div className="flex items-center gap-2 text-[11px] text-text-secondary mt-1">
@@ -340,14 +347,13 @@ function BrowseTab({
                 </div>
                 
                 {ipfsUrl(app.payload.presentationUri) ? (
-                  <a
-                    href={ipfsUrl(app.payload.presentationUri)!}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] text-accent-soft hover:underline truncate block"
+                  <button
+                    type="button"
+                    onClick={() => openEncrypted(app.payload.presentationUri).catch(() => {})}
+                    className="text-[11px] text-accent-soft hover:underline truncate block text-left cursor-pointer"
                   >
                     View Presentation Document ↗
-                  </a>
+                  </button>
                 ) : (
                   <span className="text-[11px] text-text-secondary">No portfolio uploaded</span>
                 )}
@@ -818,9 +824,25 @@ export function WorkerPanel() {
   const hasPendingPlanning = myMandates.length > 0 || myPlans.length > 0;
   const hasActiveWork = myProjects.length > 0;
 
+  const workerDots: Partial<Record<WorkerTab, boolean>> = { plan: hasPendingPlanning, work: hasActiveWork };
+  const workerPending = myMandates.length + myPlans.length + myProjects.length;
+
   return (
     <div className="flex flex-col gap-0">
-      <TabBar active={activeTab} onChange={setActiveTab} />
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <TabBar active={activeTab} onChange={setActiveTab} dots={workerDots} />
+        <button
+          type="button"
+          onClick={() => setActiveTab(hasPendingPlanning ? "plan" : "work")}
+          title={workerPending > 0 ? `${workerPending} item(s) need your attention` : "No notifications"}
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--border-light)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+        >
+          <Bell className="h-4 w-4" />
+          {workerPending > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--bg)]" />
+          )}
+        </button>
+      </div>
 
       {activeTab === "browse" && (
         <BrowseTab

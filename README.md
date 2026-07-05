@@ -278,7 +278,7 @@ Start the local ledger stack from `SmartContract/`:
 ```bash
 cd SmartContract
 daml build
-daml sandbox --static-time --port 6865
+daml sandbox --port 6865   # wall-clock: getTime advances so deadlines/late-penalty fire live
 ```
 
 In another terminal, upload the DAR and allocate demo parties:

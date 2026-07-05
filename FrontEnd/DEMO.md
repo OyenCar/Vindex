@@ -13,8 +13,9 @@ Everything below runs against a **real Canton ledger** (local sandbox). No mocks
 # from the Daml project
 cd Vindex
 
-# (a) Canton sandbox — ledger API on 6865 (static time lets the deadline scenario run)
-daml sandbox --static-time --port 6865
+# (a) Canton sandbox — ledger API on 6865 (WALL-CLOCK: getTime advances, so deadlines fire live
+#     and the late-submission badge/penalty appear on their own; drop --static-time for this)
+daml sandbox --port 6865
 
 # (b) upload the contracts + allocate the demo parties
 daml ledger upload-dar .daml/dist/vindex-0.1.0.dar --host localhost --port 6865
