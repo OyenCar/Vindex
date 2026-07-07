@@ -2,6 +2,11 @@
 
 Everything below runs against a **real Canton ledger** (local sandbox). No mocks.
 
+> **Ledger target:** the production goal is **Canton DevNet** (fivenorth "Seaport" validator), which
+> is v2-only and needs the frontend v2 port before it can run — see
+> [`../DEVNET_V2_PORT_PLAN.md`](../DEVNET_V2_PORT_PLAN.md). The local sandbox below is the current
+> demo path until then.
+
 ## 0. Prerequisites
 
 - Daml SDK 2.9.4 (`daml` on PATH, or use the full exe path).

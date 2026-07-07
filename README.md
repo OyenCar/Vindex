@@ -263,6 +263,11 @@ DAML_HOSTED_TOKEN=...
 
 or configure the OIDC client-credentials variables in `.env.local.example`.
 
+> **DevNet (Canton 3.x) status.** The hosted target is the **fivenorth "Seaport" DevNet validator**.
+> It exposes only **JSON Ledger API v2**, which `@daml/ledger` (v1) cannot speak — so hosted mode is
+> **not yet runnable** and needs the v2 client port first. Plan + blockers:
+> [`DEVNET_V2_PORT_PLAN.md`](DEVNET_V2_PORT_PLAN.md). Use the local sandbox below until it lands.
+
 Configuration caveat:
 
 - Browser HTTP calls are safest through `/ledger/` plus `LEDGER_PROXY_TARGET`.
@@ -272,6 +277,9 @@ Configuration caveat:
   IDs, or use an absolute JSON API URL for party allocation.
 
 ## Running Locally
+
+> The **local sandbox** is the current dev/demo path. The production target is **Canton DevNet**
+> (v2), which is in progress — see the status note above and [`DEVNET_V2_PORT_PLAN.md`](DEVNET_V2_PORT_PLAN.md).
 
 Start the local ledger stack from `SmartContract/`:
 

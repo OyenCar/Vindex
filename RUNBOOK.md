@@ -9,6 +9,27 @@ on your `PATH`.
 
 ---
 
+## Ledger target — DevNet (goal) vs local Sandbox (current)
+
+| Track | Status | Use |
+|---|---|---|
+| **Canton DevNet** (fivenorth "Seaport" validator) | 🚧 **In progress — not yet runnable** | The intended production target. Blocked; see [`DEVNET_V2_PORT_PLAN.md`](DEVNET_V2_PORT_PLAN.md). |
+| **Local Canton sandbox** | ✅ Works today | Dev + demo path **until** the DevNet port lands. Sections below. |
+
+**Why the app can't run on DevNet yet.** The frontend talks to the ledger through `@daml/ledger`,
+which is **JSON Ledger API v1 only**. The DevNet validator is **Canton 3.x → v2-only** (v1 was
+removed in Canton 3.4). So the current frontend physically cannot connect to DevNet until:
+
+1. the **v2 client shim** is built (replaces `@daml/ledger`; see the plan doc), and
+2. the operator supplies the **ledger API base URL**, **DAR-upload rights**, and **party allocation
+   + `actAs`** for the M2M user.
+
+Until all of that is in place, **the local sandbox below is the only working ledger.** When DevNet is
+ready, `.env.local` switches to `DAML_AUTH_MODE=hosted` + the fivenorth URL — the sandbox steps are
+skipped, not deleted (still handy for offline dev).
+
+---
+
 ## 0. Prerequisites (one time)
 
 | Tool | Version | Check |
@@ -25,14 +46,17 @@ bindings are generated under `FrontEnd/daml.js/`. You only rebuild those after e
 
 ---
 
-## 1. Start the ledger stack
+## 1. Start the ledger stack (local sandbox — current dev/fallback path)
+
+> Target is DevNet (see the table above); these steps are the **local** path that works today.
+
 
 You need **three** long‑running processes. Keep the **sandbox** running for the whole session — it
 is in‑memory, so stopping it wipes all contracts **and** the party ids.
 
 **Terminal A — Canton sandbox (leave running):**
 ```powershell
-cd "D:\code progression\web3'\hackathon\Vindex\SmartContract"
+cd "g:\web3\Hackathon\CantonEncode\Vindex\SmartContract"
 daml sandbox --port 6865
 # wait for: "Canton sandbox is ready."
 # WALL-CLOCK (no --static-time): getTime advances on its own, so worker deadlines fire live and
@@ -42,7 +66,7 @@ daml sandbox --port 6865
 
 **Terminal B — upload contracts + allocate parties (run once per sandbox start):**
 ```powershell
-cd "D:\code progression\web3'\hackathon\Vindex\SmartContract"
+cd "g:\web3\Hackathon\CantonEncode\Vindex\SmartContract"
 daml ledger upload-dar .daml/dist/vindex-0.1.0.dar --host localhost --port 6865
 daml ledger allocate-parties Investor Worker Agent --host localhost --port 6865
 # copy the three printed party ids (Investor::1220…, Worker::1220…, Agent::1220…)
@@ -50,7 +74,7 @@ daml ledger allocate-parties Investor Worker Agent --host localhost --port 6865
 
 **Terminal C — JSON Ledger API (leave running):**
 ```powershell
-cd "D:\code progression\web3'\hackathon\Vindex\SmartContract"
+cd "g:\web3\Hackathon\CantonEncode\Vindex\SmartContract"
 daml json-api --ledger-host localhost --ledger-port 6865 --http-port 7575 --allow-insecure-tokens
 # wait until http://localhost:7575/readyz returns 200
 ```
@@ -89,7 +113,7 @@ PINATA_GATEWAY=https://gateway.pinata.cloud
 
 **Terminal D — frontend (leave running):**
 ```powershell
-cd "D:\code progression\web3'\hackathon\Vindex\FrontEnd"
+cd "g:\web3\Hackathon\CantonEncode\Vindex\FrontEnd"
 npm install        # first time only
 npm run dev
 ```
@@ -142,9 +166,10 @@ larger than the budget; can't double‑post a job; human‑readable ledger error
 6. **Agent** — connect. If you took the reject path, open the deliverable and rule valid/invalid.
 7. **Explorer** — watch vaults, project status badges, and the settlement update live.
 
-> **Static‑time note:** the sandbox clock doesn't advance, so deadline‑based actions
-> ("Trigger worker violation", auto‑accept on review timeout) can't fire in a normal click‑through.
-> They are covered by the Daml Script tests (`daml test` in `SmartContract/`).
+> **Wall‑clock note:** the sandbox now runs wall‑clock (no `--static-time`), so `getTime` advances
+> and deadline‑based actions (late‑submission badge/penalty, worker‑deadline violation, auto‑accept
+> on review timeout) fire on their own once the window elapses. The Daml Script tests
+> (`daml test` in `SmartContract/`) still cover them deterministically via `passTime`.
 
 ---
 
@@ -152,7 +177,7 @@ larger than the budget; can't double‑post a job; human‑readable ledger error
 
 Editing `SmartContract/daml/Vindex.daml` changes the package id, so regenerate and re‑upload:
 ```powershell
-cd "D:\code progression\web3'\hackathon\Vindex\SmartContract"
+cd "g:\web3\Hackathon\CantonEncode\Vindex\SmartContract"
 daml build
 daml codegen js .daml/dist/vindex-0.1.0.dar -o ../FrontEnd/daml.js
 cd ..\FrontEnd; npm install                      # relink the regenerated bindings
@@ -172,7 +197,7 @@ daml ledger upload-dar .daml/dist/vindex-0.1.0.dar --host localhost --port 6865
 | `Cannot resolve template ID` / "ledger doesn't have the Vindex package" | DAR not on the sandbox (or sandbox restarted) | re‑upload the DAR, restart json‑api |
 | `Unexpected end of JSON input` on "Register a new party" | not needed — parties already allocated | pick a role tile and **Connect** |
 | Party actions fail after a sandbox restart | fresh sandbox = new party ids | re‑allocate, paste new ids into `.env.local`, restart dev server |
-| `WorkerViolation` errors out | worker deadline hasn't passed (static time) | expected — use `daml test` to exercise it |
+| `WorkerViolation` errors out | worker deadline hasn't passed yet (wall‑clock) | wait for the deadline window to elapse, then retry; `daml test` exercises it deterministically |
 
 ---
 
@@ -183,7 +208,7 @@ The sandbox is in‑memory: every restart wipes the DAR **and** re‑randomizes 
 it says "ready", seed it in one command:
 
 ```powershell
-cd "D:\code progression\web3'\hackathon\Vindex\SmartContract"
+cd "g:\web3\Hackathon\CantonEncode\Vindex\SmartContract"
 .\seed.ps1        # uploads the DAR, allocates parties, rewrites FrontEnd/.env.local
 ```
 

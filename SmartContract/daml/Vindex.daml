@@ -389,9 +389,6 @@ template Application
     signatory applicant
     observer members
 
-    key (applicant, postingId) : (Party, Text)
-    maintainer key._1
-
 template ProjectPosting
   with
     postingId : Text
