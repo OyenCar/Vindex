@@ -30,6 +30,7 @@ module Vindex where
 
 import DA.Time (RelTime, addRelTime)
 import qualified DA.Text as T
+import Vindex.Token
 
 -- ---------------------------------------------------------------------------
 -- Enumerations and value types
@@ -170,13 +171,14 @@ template AssetVault
     funders : [Party]        -- ^ signatories; subset of Project signatories so Project can drive it
     stakeholders : [Party]   -- ^ observers: members + worker + agent (privacy: visible to these only)
     amount : Decimal
+    holdingCid : Optional (ContractId TokenHolding)  -- ^ CIP-56: real token UTXO backing this vault
   where
     signatory funders
     observer stakeholders
     ensure amount >= 0.0
 
-    -- MONEY MOVEMENT: release funds to a beneficiary (abstract: only adjusts the number).
-    -- SWAP POINT: replace the body with a real Canton Token Standard transfer to `beneficiary`.
+    -- MONEY MOVEMENT: release funds to a beneficiary.
+    -- CIP-56 UPGRADE: when holdingCid is present, exercises Transfer on the real token.
     choice Release : ContractId AssetVault
       with
         amt : Decimal
@@ -184,7 +186,14 @@ template AssetVault
       controller funders
       do
         assertMsg "Release: insufficient funds" (amount >= amt)
-        create this with amount = amount - amt
+        newHolding <- case holdingCid of
+          Some hCid -> do
+            (_receiverCid, changeCid) <- exercise hCid Transfer with
+              newOwner = beneficiary
+              transferAmount = amt
+            pure changeCid  -- remainder stays in vault (or None if fully drained)
+          None -> pure None  -- abstract mode: no real token
+        create this with amount = amount - amt, holdingCid = newHolding
 
     -- MONEY MOVEMENT: spend/burn funds (e.g. a capped worker-violation penalty).
     choice Spend : ContractId AssetVault
@@ -192,12 +201,42 @@ template AssetVault
       controller funders
       do
         assertMsg "Spend: insufficient funds" (amount >= amt)
-        create this with amount = amount - amt
+        newHolding <- case holdingCid of
+          Some hCid -> do
+            -- "Spend" = transfer to the custodian (admin) who can later burn it
+            h <- fetch hCid
+            (_burnCid, changeCid) <- exercise hCid Transfer with
+              newOwner = h.custodian
+              transferAmount = amt
+            pure changeCid
+          None -> pure None
+        create this with amount = amount - amt, holdingCid = newHolding
 
     -- MONEY MOVEMENT: settle/refund the whole vault to its funders; vault is consumed.
     choice Settle : Decimal
       controller funders
-      do pure amount
+      do
+        -- If there's a real token holding, transfer it back to the custodian
+        case holdingCid of
+          Some hCid -> do
+            h <- fetch hCid
+            exercise hCid Transfer with
+              newOwner = h.custodian
+              transferAmount = h.amount
+            pure ()
+          None -> pure ()
+        pure amount
+
+    -- CIP-56 UPGRADE: Back/set a real TokenHolding to this vault.
+    choice BackWithToken : ContractId AssetVault
+      with
+        holding : ContractId TokenHolding
+      controller funders
+      do
+        h <- fetch holding
+        assertMsg "Token balance must match vault amount" (h.amount == amount)
+        assertMsg "Token owner must be one of the funders" (h.owner `elem` funders)
+        create this with holdingCid = Some holding
 
 -- ---------------------------------------------------------------------------
 -- Investor Party (multi-signatory) + propose/accept join + setup
@@ -282,6 +321,7 @@ template InvestorParty
         recruitmentMode : Text
         eligibleWorkers : [Text]
         publicParty : Party
+        holdingCidOpt : Optional (ContractId TokenHolding)
       controller admin
       do
         assertMsg "budget envelope must be positive" (budgetAmount > 0.0)
@@ -317,6 +357,7 @@ template InvestorParty
           funders = members
           stakeholders = stake
           amount = budgetAmount
+          holdingCid = holdingCidOpt
         posting <- create ProjectPosting with
           postingId
           investorPartyCid = self
@@ -675,7 +716,9 @@ template WorkPlan
     -- by this co-signed plan). LOCKED DECISION 7: the funded budget envelope must cover
     -- Σ(payment × (1 + p%)).
     choice ApprovePlan : ContractId Project
-      with actor : Party
+      with
+        actor : Party
+        commitmentHoldingCid : Optional (ContractId TokenHolding)
       controller actor
       do
         assertMsg "actor must be a member" (actor `elem` members)
@@ -692,6 +735,7 @@ template WorkPlan
           funders = [worker]
           stakeholders = members ++ [worker, agent]
           amount = commitmentRequired
+          holdingCid = commitmentHoldingCid
         create Project with
           investorPartyCid
           members

@@ -1,0 +1,159 @@
+-- | Vindex.Token — CIP-56-compatible token types and templates.
+--
+-- This module provides a Canton Token Standard–compatible token for the Vindex
+-- escrow platform (tUSDT = test USDT, a stablecoin stand-in for the hackathon).
+--
+-- The interfaces are vendored inline rather than imported from the external
+-- `splice-token-standard` DAR packages.  This keeps the build self-contained
+-- and SDK-version-aligned (Daml 3.5.2 / LF 2.1) without pulling in the full
+-- Splice build system.
+--
+-- KEY DESIGN:
+--   • `TokenRegistry`  — singleton per instrument; the admin mints/burns.
+--   • `TokenHolding`   — a UTXO of the instrument; owner can transfer/split/merge.
+--   • `InstrumentId`   — globally unique {admin, id} pair.
+--   • Data types mirror CIP-56 `HoldingView` shape so Loop Wallet / Splice wallets
+--     can discover holdings via the standard ACS interface filter.
+module Vindex.Token where
+
+-- ---------------------------------------------------------------------------
+-- CIP-56-compatible data types (vendored inline)
+-- ---------------------------------------------------------------------------
+
+-- | Globally unique identifier for an instrument (mirrors Splice.Api.Token.HoldingV1.InstrumentId).
+data InstrumentId = InstrumentId
+  with
+    admin : Party
+      -- ^ The party representing the registry app that administers the instrument.
+    id : Text
+      -- ^ The identifier used for the instrument by the instrument admin.
+      --   This identifier MUST be unique and unambiguous per instrument admin.
+  deriving (Eq, Ord, Show)
+
+-- | Human-readable metadata for the instrument (mirrors Splice.Api.Token.MetadataV1 shape).
+data TokenMeta = TokenMeta
+  with
+    name        : Text    -- ^ e.g. "Test USDT (Vindex)"
+    symbol      : Text    -- ^ e.g. "tUSDT"
+    decimals    : Int     -- ^ fractional digits; 6 for a USDT-style stablecoin
+    iconUri     : Text    -- ^ optional icon URL / IPFS CID
+    description : Text    -- ^ human-readable description
+  deriving (Eq, Show)
+
+-- | CIP-56-compatible view shape.  Wallets query this via the ACS interface filter.
+data HoldingView = HoldingView
+  with
+    owner        : Party
+    instrumentId : InstrumentId
+    amount       : Decimal
+    meta         : TokenMeta
+  deriving (Eq, Show)
+
+-- ---------------------------------------------------------------------------
+-- TokenRegistry — singleton admin template for minting / burning
+-- ---------------------------------------------------------------------------
+
+-- | The registry template controls the supply of one instrument.
+--   The `admin` is the sole signatory — in Vindex this is the Investor Party admin.
+template TokenRegistry
+  with
+    admin        : Party          -- ^ issuer / minter
+    instrumentId : InstrumentId   -- ^ the instrument this registry manages
+    meta         : TokenMeta      -- ^ static metadata
+    totalSupply  : Decimal        -- ^ running total of minted − burned tokens
+    observers    : [Party]        -- ^ extra observers (e.g. the agent)
+  where
+    signatory admin
+    observer observers
+    ensure totalSupply >= 0.0
+
+    -- Mint new holdings to a target owner.
+    -- Returns (updated registry, new holding cid).
+    choice Mint : (ContractId TokenRegistry, ContractId TokenHolding)
+      with
+        owner  : Party
+        amount : Decimal
+      controller admin
+      do
+        assertMsg "Mint: amount must be positive" (amount > 0.0)
+        regCid <- create this with totalSupply = totalSupply + amount
+        holdCid <- create TokenHolding with
+          owner
+          custodian = admin
+          instrumentId
+          amount
+          meta
+        pure (regCid, holdCid)
+
+    -- Burn an existing holding — reduces supply.
+    choice Burn : ContractId TokenRegistry
+      with
+        holdingCid : ContractId TokenHolding
+      controller admin
+      do
+        h <- fetch holdingCid
+        assertMsg "Burn: wrong instrument" (h.instrumentId == instrumentId)
+        assertMsg "Burn: only owner or custodian can burn" (h.owner == admin || h.custodian == admin)
+        archive holdingCid
+        create this with totalSupply = totalSupply - h.amount
+
+-- ---------------------------------------------------------------------------
+-- TokenHolding — a single UTXO of the instrument
+-- ---------------------------------------------------------------------------
+
+-- | One unit-of-account UTXO.  The `custodian` is the registry admin (issuer);
+--   the `owner` is the current holder.  Canton's privacy model ensures only
+--   signatories + observers can see this contract.
+template TokenHolding
+  with
+    owner        : Party          -- ^ current holder
+    custodian    : Party          -- ^ registry admin / issuer (always a signatory)
+    instrumentId : InstrumentId   -- ^ which instrument
+    amount       : Decimal        -- ^ how many units
+    meta         : TokenMeta      -- ^ cached metadata (denormalised for wallet display)
+  where
+    signatory custodian
+    observer owner
+    ensure amount > 0.0
+
+    -- Direct transfer to another party.  Consumes this holding and creates a
+    -- new one owned by the receiver.  If `transferAmount < amount`, the
+    -- remainder is returned to the original owner (implicit split).
+    choice Transfer : (ContractId TokenHolding, Optional (ContractId TokenHolding))
+      with
+        newOwner       : Party
+        transferAmount : Decimal
+      controller custodian   -- custodian (= signatory) drives transfers; AssetVault carries authority
+      do
+        assertMsg "Transfer: amount must be positive" (transferAmount > 0.0)
+        assertMsg "Transfer: insufficient balance" (transferAmount <= amount)
+        receiverCid <- create this with owner = newOwner, amount = transferAmount
+        if transferAmount < amount
+          then do
+            changeCid <- create this with amount = amount - transferAmount
+            pure (receiverCid, Some changeCid)
+          else
+            pure (receiverCid, None)
+
+    -- Split this holding into two parts.
+    choice Split : (ContractId TokenHolding, ContractId TokenHolding)
+      with splitAmount : Decimal
+      controller owner
+      do
+        assertMsg "Split: amount must be positive" (splitAmount > 0.0)
+        assertMsg "Split: amount must be less than balance" (splitAmount < amount)
+        aCid <- create this with amount = splitAmount
+        bCid <- create this with amount = amount - splitAmount
+        pure (aCid, bCid)
+
+    -- Merge another holding of the same instrument into this one.
+    choice Merge : ContractId TokenHolding
+      with otherCid : ContractId TokenHolding
+      controller owner
+      do
+        other <- fetch otherCid
+        assertMsg "Merge: same instrument required" (other.instrumentId == instrumentId)
+        assertMsg "Merge: same owner required" (other.owner == owner)
+        assertMsg "Merge: same custodian required" (other.custodian == custodian)
+        archive otherCid
+        create this with amount = amount + other.amount

@@ -9,7 +9,7 @@ import { FileUpload } from "@/components/daml/FileUpload";
 import { Button } from "@/components/ui/button";
 import { damlConfig } from "@/lib/daml/config";
 import { ipfsUrl, openEncrypted } from "@/lib/daml/storage";
-import { Vindex, num, hours, days, STATUS_LABEL } from "@/lib/daml/vindex";
+import { Vindex, TokenHolding, TokenRegistry, num, hours, days, STATUS_LABEL } from "@/lib/daml/vindex";
 import { cn } from "@/lib/utils";
 import { Info, Settings, ShieldAlert, Award, ChevronDown, ChevronUp, Cpu, Loader2, Bell } from "lucide-react";
 
@@ -312,10 +312,12 @@ function AiAuditSection({
 const INVESTOR_TABS = [
   { id: "post", label: "Post Job" },
   { id: "monitor", label: "Monitor" },
+  { id: "governance", label: "Governance" },
+  { id: "token", label: "Token Standard" },
   { id: "setup", label: "Setup" },
 ] as const;
 
-type InvestorTab = "setup" | "post" | "monitor";
+type InvestorTab = "setup" | "post" | "monitor" | "governance" | "token";
 
 function TabBar({
   active,
@@ -352,6 +354,253 @@ function TabBar({
   );
 }
 
+// ─── Token Tab ────────────────────────────────────────────────────────────────
+
+function TokenTab({
+  registries,
+  holdings,
+  tokenCmd,
+  party,
+}: {
+  registries: readonly any[];
+  holdings: readonly any[];
+  tokenCmd: any;
+  party: string;
+}) {
+  const { session } = useDaml();
+  
+  // State for token registry initialization
+  const [initName, setInitName] = useState("Canton Test Token");
+  const [initSymbol, setInitSymbol] = useState("tUSDT");
+  const [initDecimals, setInitDecimals] = useState("6");
+  const [initDescription, setInitDescription] = useState("Canton-native test token matching CIP-56");
+  const [initIconUri, setInitIconUri] = useState("https://vindex.io/icons/tusdt.png");
+
+  // State for minting
+  const [mintReceiver, setMintReceiver] = useState("");
+  const [mintAmount, setMintAmount] = useState("10000");
+
+  // State for transfer
+  const [transferReceiver, setTransferReceiver] = useState("");
+  const [transferAmount, setTransferAmount] = useState("1000");
+  const [selectedHoldingId, setSelectedHoldingId] = useState("");
+
+  // Get active registry (first one for now, or matching symbol)
+  const activeRegistry = registries[0];
+  
+  // Get active holdings for this party
+  const myHoldings = holdings.filter(h => h.payload.owner === party);
+  const totalBalance = myHoldings.reduce((sum, h) => sum + Number(h.payload.amount), 0);
+
+  const handleInitToken = () => {
+    tokenCmd.run(async () => {
+      const instId = { admin: party, id: initSymbol };
+      const meta = {
+        name: initName,
+        symbol: initSymbol,
+        decimals: initDecimals,
+        iconUri: initIconUri,
+        description: initDescription,
+      };
+      await session!.ledger.create(TokenRegistry, {
+        admin: party,
+        instrumentId: instId,
+        meta,
+        totalSupply: "0",
+        observers: [party],
+      });
+    });
+  };
+
+  const handleMint = () => {
+    if (!activeRegistry) return;
+    tokenCmd.run(async () => {
+      await session!.ledger.exercise(TokenRegistry.Mint, activeRegistry.contractId, {
+        owner: mintReceiver,
+        amount: num(mintAmount),
+      });
+      setMintReceiver("");
+    });
+  };
+
+  const handleTransfer = () => {
+    if (!selectedHoldingId) return;
+    const h = myHoldings.find(x => x.contractId === selectedHoldingId);
+    if (!h) return;
+    tokenCmd.run(async () => {
+      await session!.ledger.exercise(TokenHolding.Transfer, h.contractId, {
+        newOwner: transferReceiver,
+        transferAmount: num(transferAmount),
+      });
+      setTransferReceiver("");
+    });
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: holdings table & actions */}
+      <div className="flex flex-col gap-4">
+        {activeRegistry ? (
+          <>
+            <Card title={`Active Token Standard: ${activeRegistry.payload.meta.name}`}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[12px] p-2 bg-white/[0.01] rounded-lg border border-white/5">
+                <div>
+                  <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Symbol</span>
+                  <p className="font-mono text-text-primary font-bold text-[13px]">{activeRegistry.payload.meta.symbol}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Decimals</span>
+                  <p className="text-text-primary font-bold text-[13px]">{activeRegistry.payload.meta.decimals}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Total Supply</span>
+                  <p className="font-mono text-emerald-400 font-bold text-[13px]">{activeRegistry.payload.totalSupply}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Custodian/Admin</span>
+                  <p className="font-mono text-text-primary text-[10px] truncate" title={activeRegistry.payload.admin}>
+                    {activeRegistry.payload.admin}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[11px] text-text-secondary mt-3 italic">
+                {activeRegistry.payload.meta.description}
+              </p>
+            </Card>
+
+            <Card title="Your Token Holdings">
+              {myHoldings.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center">
+                  <p className="text-[12px] text-text-secondary">No token holdings found.</p>
+                  <p className="text-[10px] text-text-muted mt-1 max-w-[240px]">
+                    Mint tokens or receive a transfer to populate your Canton-native holdings.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[12px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/5 text-[10px] uppercase text-text-muted font-bold tracking-wider">
+                        <th className="pb-2">Contract ID</th>
+                        <th className="pb-2 text-right">Balance</th>
+                        <th className="pb-2 pl-4">Instrument</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {myHoldings.map((h: any) => (
+                        <tr key={h.contractId} className="border-b border-white/[0.02] hover:bg-white/[0.01]">
+                          <td className="py-2.5 font-mono text-[10px] truncate max-w-[140px]" title={h.contractId}>
+                            {h.contractId}
+                          </td>
+                          <td className="py-2.5 font-mono text-right font-bold text-emerald-400">
+                            {h.payload.amount}
+                          </td>
+                          <td className="py-2.5 pl-4 text-text-secondary">
+                            {h.payload.instrumentId.id}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </>
+        ) : (
+          <Card title="Token Standard (CIP-56)">
+            <div className="flex flex-col gap-3">
+              <p className="text-[12px] text-text-secondary">
+                No active token registry has been deployed for this project's Synchronizer.
+              </p>
+              <div className="border border-white/10 bg-white/[0.01] p-3 rounded-lg flex flex-col gap-2">
+                <p className="text-[11px] font-bold text-text-primary">Why Native Canton Tokens?</p>
+                <p className="text-[10px] text-text-secondary leading-relaxed">
+                  Escrow AssetVaults can lock real token balances instead of abstract numbers. Deploy a native token contract below to back your governance vaults with real transferable assets.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3.5 border-t border-white/5 pt-4 mt-2">
+                <h4 className="text-[12px] font-bold text-text-primary">Deploy New Token Registry</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Token Name" value={initName} onChange={setInitName} />
+                  <Field label="Token Symbol" value={initSymbol} onChange={setInitSymbol} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Decimals" value={initDecimals} onChange={setInitDecimals} />
+                  <Field label="Icon URI" value={initIconUri} onChange={setInitIconUri} />
+                </div>
+                <Field label="Token Description" value={initDescription} onChange={setInitDescription} />
+                <Button 
+                  onClick={handleInitToken}
+                  disabled={tokenCmd.phase === "submitting"}
+                >
+                  Initialize Native Token
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
+        <TxStatus status={tokenCmd} />
+      </div>
+
+      {/* Right Col: Token actions (Mint & Transfer) */}
+      <div className="flex flex-col gap-4 lg:sticky lg:top-20">
+        <Card title="Total Balance">
+          <p className="text-3xl font-black text-emerald-400 font-mono tracking-tight">{totalBalance.toLocaleString()}</p>
+          <p className="text-[10px] text-text-muted mt-1 uppercase font-bold tracking-wider">
+            {activeRegistry ? activeRegistry.payload.meta.symbol : "Tokens"}
+          </p>
+        </Card>
+
+        {activeRegistry && activeRegistry.payload.admin === party && (
+          <Card title="Mint Tokens">
+            <div className="flex flex-col gap-3">
+              <Field label="Receiver Party ID" value={mintReceiver} onChange={setMintReceiver} placeholder="Investor::1220..." />
+              <NumField label="Mint Amount" value={mintAmount} onChange={setMintAmount} />
+              <Button
+                onClick={handleMint}
+                disabled={!mintReceiver.trim() || Number(mintAmount) <= 0 || tokenCmd.phase === "submitting"}
+              >
+                Mint Tokens
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {activeRegistry && myHoldings.length > 0 && (
+          <Card title="Transfer Tokens">
+            <div className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Select Holding</span>
+                <select
+                  value={selectedHoldingId}
+                  onChange={(e) => setSelectedHoldingId(e.target.value)}
+                  className="brutal-input bg-[var(--surface)] text-[12px]"
+                >
+                  <option value="">-- Choose Holding UTXO --</option>
+                  {myHoldings.map((h: any) => (
+                    <option key={h.contractId} value={h.contractId}>
+                      {h.payload.amount} ({h.contractId.slice(0, 10)}...)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Field label="Receiver Party ID" value={transferReceiver} onChange={setTransferReceiver} placeholder="Worker::1220..." />
+              <NumField label="Transfer Amount" value={transferAmount} onChange={setTransferAmount} />
+              <Button
+                onClick={handleTransfer}
+                disabled={!selectedHoldingId || !transferReceiver.trim() || Number(transferAmount) <= 0 || tokenCmd.phase === "submitting"}
+              >
+                Transfer Tokens
+              </Button>
+            </div>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Setup Tab ────────────────────────────────────────────────────────────────
 
 function SetupTab({
@@ -368,6 +617,11 @@ function SetupTab({
   createParty,
   createCmd,
   setNewPartyMode,
+  invites,
+  inviteCmd,
+  acceptInvite,
+  declineInvite,
+  party,
 }: any) {
   const [draftProvider, setDraftProvider] = useState("groq");
   const [draftModel, setDraftModel] = useState("");
@@ -375,10 +629,50 @@ function SetupTab({
   const budgetOk = Number(budget) > 0;
   const formReady = agent.trim().length > 0 && budgetOk;
 
+  const myInvites = (invites?.contracts ?? []).filter((invite: any) => invite.payload.invitee === party);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
       {/* Left Col: Setup form or active party details */}
       <div className="flex flex-col gap-4">
+        {myInvites.length > 0 && (
+          <Card title="Pending Party Invitations">
+            <p className="text-[12px] text-[var(--text-secondary)] mb-2">
+              You have been invited to join the following Investor Parties:
+            </p>
+            <ul className="flex flex-col gap-3">
+              {myInvites.map((invite: any) => (
+                <li key={invite.contractId} className="flex flex-col gap-2 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-3">
+                  <p className="text-[12px] text-text-primary">
+                    Invite from admin: <span className="font-mono text-[10px] font-bold">{invite.payload.admin}</span>
+                  </p>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Proposed Funding: <span className="font-mono font-semibold">{invite.payload.proposedContribution.projectFunding}</span> · Weight: <span className="font-mono font-semibold">{invite.payload.proposedContribution.weight}</span>
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => acceptInvite(invite)}
+                      disabled={inviteCmd.phase === "submitting"}
+                    >
+                      Accept &amp; Join
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => declineInvite(invite)}
+                      disabled={inviteCmd.phase === "submitting"}
+                    >
+                      Decline
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <TxStatus status={inviteCmd} />
+          </Card>
+        )}
+
         {!myParty || newPartyMode ? (
           <Card title="Create Investor Party">
             <p className="text-[12px] text-[var(--text-secondary)]">
@@ -519,6 +813,192 @@ function SetupTab({
   );
 }
 
+// ─── Governance Tab ───────────────────────────────────────────────────────────
+
+function GovernanceTab({
+  myParty,
+  proposals,
+  govCmd,
+  castProposalVote,
+  executeProposal,
+  inviteInvestor,
+  inviteCmd,
+  party,
+}: any) {
+  const [invitee, setInvitee] = useState("");
+  const [funding, setFunding] = useState("2000");
+  const [weight, setWeight] = useState("1");
+
+  if (!myParty) {
+    return (
+      <Card title="Governance">
+        <p className="text-[12px] text-text-secondary">
+          Create or join an Investor Party in the Setup tab first to access governance features.
+        </p>
+      </Card>
+    );
+  }
+
+  const isAdmin = myParty.payload.admin === party;
+  const myProposals = (proposals?.contracts ?? []).filter((p: any) =>
+    p.payload.members.every((m: string) => myParty.payload.members.includes(m))
+  );
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: active proposals & invite co-investors */}
+      <div className="flex flex-col gap-4">
+        <Card title="Active Governance Proposals">
+          {myProposals.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No active governance proposals.</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {myProposals.map((prop: any) => {
+                const hasVoted = prop.payload.votes.some((v: any) => v._1 === party);
+                const votesCount = prop.payload.votes.length;
+                const acceptCount = prop.payload.votes.filter((v: any) => v._2 === "ACCEPT").length;
+                const rejectCount = prop.payload.votes.filter((v: any) => v._2 === "REJECT").length;
+                
+                const totalMembers = prop.payload.members.length;
+                const threshold = Number(prop.payload.config.thresholdFraction) * totalMembers;
+                const quorum = Number(prop.payload.config.quorumFraction) * totalMembers;
+                
+                const passed = acceptCount >= threshold && votesCount >= quorum;
+                const rejected = rejectCount > (totalMembers - threshold) || (votesCount >= totalMembers && acceptCount < threshold);
+                
+                return (
+                  <li key={prop.contractId} className="rounded-lg border border-white/8 p-3.5 bg-white/[0.01]">
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <div>
+                        <h4 className="text-[12px] font-bold text-text-primary">{prop.payload.purpose}</h4>
+                        <p className="text-[10px] text-text-secondary mt-0.5">
+                          Action: {prop.payload.action.tag} 
+                          {prop.payload.action.tag === "SelectWinner" && ` (${prop.payload.action.value})`}
+                        </p>
+                      </div>
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+                        passed ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                        rejected ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                      )}>
+                        {passed ? "Passed" : rejected ? "Rejected" : "Voting"}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 border-t border-white/5 pt-2.5 mt-2.5">
+                      <p className="text-[11px] text-text-secondary">
+                        Votes: {votesCount}/{totalMembers} · Accept: {acceptCount} · Reject: {rejectCount}
+                      </p>
+                      <p className="text-[10px] text-text-muted">
+                        Required threshold: {threshold} accept · Quorum: {quorum} total votes
+                      </p>
+                      
+                      {!hasVoted && !passed && !rejected && (
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => castProposalVote(prop, "ACCEPT")}
+                            disabled={govCmd.phase === "submitting"}
+                          >
+                            Vote Accept
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="bg-red-900/50 hover:bg-red-900 border-red-800 text-red-200"
+                            onClick={() => castProposalVote(prop, "REJECT")}
+                            disabled={govCmd.phase === "submitting"}
+                          >
+                            Vote Reject
+                          </Button>
+                        </div>
+                      )}
+
+                      {passed && (
+                        <Button
+                          size="sm"
+                          className="mt-2 w-full"
+                          onClick={() => executeProposal(prop)}
+                          disabled={govCmd.phase === "submitting"}
+                        >
+                          Execute Proposal Action
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <TxStatus status={govCmd} />
+        </Card>
+
+        {isAdmin && (
+          <Card title="Invite Co-Investor">
+            <p className="text-[11px] text-text-secondary mb-2">
+              Invite another Canton party to co-fund and participate in governance for this project.
+            </p>
+            <div className="flex flex-col gap-3">
+              <Field label="Invitee Party ID" value={invitee} onChange={setInvitee} placeholder="Investor::1220..." />
+              <div className="grid grid-cols-2 gap-2">
+                <NumField label="Funding Contribution" value={funding} onChange={setFunding} />
+                <NumField label="Voting Weight" value={weight} onChange={setWeight} />
+              </div>
+              <Button
+                onClick={() => {
+                  inviteInvestor(invitee, funding, weight);
+                  setInvitee("");
+                }}
+                disabled={!invitee.trim() || Number(funding) <= 0 || Number(weight) <= 0 || inviteCmd.phase === "submitting"}
+              >
+                Send Invitation
+              </Button>
+            </div>
+            <TxStatus status={inviteCmd} />
+          </Card>
+        )}
+      </div>
+
+      {/* Right Col: Members List & Config */}
+      <div className="flex flex-col gap-4 lg:sticky lg:top-20">
+        <Card title="Governance Members">
+          <ul className="flex flex-col gap-2">
+            {myParty.payload.contributions.map((c: any, i: number) => {
+              const isMemAdmin = c.investor === myParty.payload.admin;
+              return (
+                <li key={i} className="flex flex-col gap-1 rounded-lg border border-white/8 bg-white/[0.01] p-2.5 text-[12px]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-text-primary truncate max-w-[180px]" title={c.investor}>
+                      {c.investor}
+                    </span>
+                    {isMemAdmin && (
+                      <span className="text-[9px] font-black uppercase text-accent-soft">Admin</span>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-[10px] text-text-secondary border-t border-white/5 pt-1 mt-1">
+                    <span>Funding: {c.projectFunding}</span>
+                    <span>Weight: {c.weight}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+
+        <Card title="Governance Rules">
+          <div className="flex flex-col gap-2 text-[11px] text-text-secondary leading-relaxed">
+            <p><strong>Voting Model:</strong> {myParty.payload.config.votingModel}</p>
+            <p><strong>Max Investors:</strong> {myParty.payload.config.maxInvestors}</p>
+            <p><strong>Threshold Fraction:</strong> {myParty.payload.config.thresholdFraction} (power required to pass)</p>
+            <p><strong>Quorum Fraction:</strong> {myParty.payload.config.quorumFraction} (minimum participation)</p>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── Post Job Tab ─────────────────────────────────────────────────────────────
 
 function PostTab({
@@ -558,6 +1038,10 @@ function PostTab({
   handleTakeDown,
   selectApplicant,
   selectCmd,
+  holdings = [],
+  postHoldingId,
+  setPostHoldingId,
+  party,
 }: any) {
   const budgetNum = Number(budget);
   const budgetValid = Number.isFinite(budgetNum) && budgetNum > 0;
@@ -683,6 +1167,30 @@ function PostTab({
                   <Button type="button" size="sm" onClick={addWorker}>Add</Button>
                 </div>
               </div>
+            )}
+
+            {/* Optional CIP-56 Token Backing */}
+            {holdings.length > 0 && (
+              <label className="flex flex-col gap-1 mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Back with Token Holding (Optional CIP-56)
+                </span>
+                <select
+                  value={postHoldingId}
+                  onChange={(e) => setPostHoldingId(e.target.value)}
+                  className="brutal-input bg-[var(--surface)] text-[12px]"
+                >
+                  <option value="">-- Abstract / None (No Token Backing) --</option>
+                  {holdings.map((h: any) => (
+                    <option key={h.contractId} value={h.contractId}>
+                      {h.payload.amount} {h.payload.instrumentId.id} ({h.contractId.slice(0, 10)}...)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-text-secondary mt-0.5">
+                  Select a token holding to lock real native assets inside the escrow budget vault.
+                </p>
+              </label>
             )}
 
             <div className="grid grid-cols-2 gap-2">
@@ -869,8 +1377,13 @@ function MonitorTab({
   approvePlan,
   rejectPlan,
   planRequired,
+  // governance resolution params:
+  openProposalForViolation,
+  myParty,
+  party,
 }: any) {
   const hasActivePlans = myMandates.length > 0 || myPlans.length > 0;
+  const [commitmentHoldingInput, setCommitmentHoldingInput] = useState("");
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
@@ -907,13 +1420,39 @@ function MonitorTab({
                       {pl.payload.milestones.length} milestone(s) · max {pl.payload.maxSubmissions} submissions · needs ≥{" "}
                       <span className="text-text-primary font-semibold">{required.toFixed(0)}</span> from the envelope
                     </p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <Button size="sm" onClick={() => approvePlan(pl)} disabled={planCmd.phase === "submitting"}>
-                        Approve &amp; Start
-                      </Button>
-                      <Button size="sm" variant="secondary" onClick={() => rejectPlan(pl)} disabled={planCmd.phase === "submitting"}>
-                        Reject &amp; Ask to Revise
-                      </Button>
+                    <div className="flex flex-col gap-2 mt-2">
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--text-muted)]">
+                          Worker Commitment Token Holding ID (Optional CIP-56)
+                        </span>
+                        <input
+                          type="text"
+                          value={commitmentHoldingInput}
+                          onChange={(e) => setCommitmentHoldingInput(e.target.value)}
+                          placeholder="holding-abc..."
+                          className="rounded border border-[var(--border-light)] bg-black/[0.02] dark:bg-white/[0.03] px-2 py-1.5 text-[11px] font-mono outline-none focus:border-accent/50"
+                        />
+                      </label>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            approvePlan(pl, commitmentHoldingInput);
+                            setCommitmentHoldingInput("");
+                          }}
+                          disabled={planCmd.phase === "submitting"}
+                        >
+                          Approve &amp; Start
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => rejectPlan(pl)}
+                          disabled={planCmd.phase === "submitting"}
+                        >
+                          Reject &amp; Ask to Revise
+                        </Button>
+                      </div>
                     </div>
                   </li>
                 );
@@ -1103,6 +1642,37 @@ function MonitorTab({
                       })}
                     </ul>
 
+                    {p.payload.status === "Failed" && (
+                      <div className="mt-2 border-t border-white/5 pt-2.5 flex flex-col gap-2 bg-red-500/5 p-3 rounded-lg border border-red-500/20">
+                        <p className="text-[12px] text-red-300 font-bold">⚠️ Project Violation Detected</p>
+                        <p className="text-[11px] text-text-secondary">
+                          The worker missed the milestone deadline. A penalty has been deducted from their Commitment Vault.
+                        </p>
+                        {myParty?.payload?.admin === party ? (
+                          <div className="flex gap-2 mt-1">
+                            <Button
+                              size="sm"
+                              onClick={() => openProposalForViolation(p, "ResolveContinue")}
+                            >
+                              Propose Continue
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-red-900/50 hover:bg-red-900 border-red-800 text-red-200"
+                              onClick={() => openProposalForViolation(p, "ResolveStop")}
+                            >
+                              Propose Stop
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-text-secondary italic">
+                            Waiting for the admin to open a resolution proposal. Vote on it in the Governance tab.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Abandonment: the single reputation-negative action, available while the
                         project is still open. Manual + not deadline-gated (works under static-time). */}
                     {markAbandoned &&
@@ -1211,12 +1781,19 @@ export function InvestorPanel() {
   const vaults = useStreamQueries(Vindex.AssetVault);
   const settlements = useStreamQueries(Vindex.Settlement);
   const applications = useStreamQueries(Vindex.Application);
+  const invites = useStreamQueries(Vindex.InvestorInvite);
+  const proposals = useStreamQueries(Vindex.GovernanceProposal);
+  const registries = useStreamQueries(TokenRegistry);
+  const holdings = useStreamQueries(TokenHolding);
 
   const createCmd = useCommand<unknown>();
+  const tokenCmd = useCommand<unknown>();
   const postCmd = useCommand<unknown>();
   const voteCmd = useCommand<unknown>();
   const selectCmd = useCommand<unknown>();
   const planCmd = useCommand<unknown>();
+  const inviteCmd = useCommand<unknown>();
+  const govCmd = useCommand<unknown>();
 
   const [agent, setAgent] = useState(() => loadSetup().agent || damlConfig.parties.agent);
   const [budget, setBudget] = useState("4000");
@@ -1237,6 +1814,7 @@ export function InvestorPanel() {
   const [isOpenPool, setIsOpenPool] = useState(true);
   const [editingPostingCid, setEditingPostingCid] = useState<string | null>(null);
   const [editingRequirements, setEditingRequirements] = useState("");
+  const [postHoldingId, setPostHoldingId] = useState("");
   const [newPartyMode, setNewPartyMode] = useState(false);
   const [preferredPartyCid, setPreferredPartyCid] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<InvestorTab>("setup");
@@ -1306,10 +1884,17 @@ export function InvestorPanel() {
     (preferredPartyCid ? myParties.find((c) => c.contractId === preferredPartyCid) : undefined) ||
     myParties[0];
 
+  const myInvites = invites.contracts.filter((invite: any) => invite.payload.invitee === party);
+  const myProposals = proposals.contracts.filter((p: any) =>
+    myParty ? p.payload.members.every((m: string) => myParty.payload.members.includes(m)) : false
+  );
+
   // Tab badges
   const badges: Partial<Record<InvestorTab, number>> = {};
   const pendingCount = myPlans.length + myReviews.length;
   if (pendingCount > 0) badges.monitor = pendingCount;
+  if (myInvites.length > 0) badges.setup = myInvites.length;
+  if (myProposals.length > 0) badges.governance = myProposals.length;
 
   const createParty = () =>
     createCmd
@@ -1356,15 +1941,21 @@ export function InvestorPanel() {
             recruitmentMode: isOpenPool ? "OPEN_POOL" : "INVITE_ONLY",
             eligibleWorkers: isOpenPool ? ["Worker::*"] : workers,
             publicParty: damlConfig.parties.public,
+            holdingCidOpt: postHoldingId ? (postHoldingId as any) : null,
           }),
         { refOf: (r) => JSON.stringify((r as unknown[])[0]) },
       )
       .catch(() => undefined);
   };
 
-  const approvePlan = (plan: (typeof plans.contracts)[number]) =>
+  const approvePlan = (plan: (typeof plans.contracts)[number], commitmentHoldingId?: string) =>
     planCmd
-      .run(() => session!.ledger.exercise(Vindex.WorkPlan.ApprovePlan, plan.contractId, { actor: party }))
+      .run(() =>
+        session!.ledger.exercise(Vindex.WorkPlan.ApprovePlan, plan.contractId, {
+          actor: party,
+          commitmentHoldingCid: commitmentHoldingId ? (commitmentHoldingId as any) : null,
+        }),
+      )
       .catch(() => undefined);
 
   const rejectPlan = (plan: (typeof plans.contracts)[number]) =>
@@ -1537,6 +2128,91 @@ export function InvestorPanel() {
       })
       .catch(() => undefined);
 
+  const acceptInvite = (invite: any) =>
+    inviteCmd
+      .run(() => session!.ledger.exercise(Vindex.InvestorInvite.AcceptInvite, invite.contractId, {}))
+      .catch(() => undefined);
+
+  const declineInvite = (invite: any) =>
+    inviteCmd
+      .run(() => session!.ledger.exercise(Vindex.InvestorInvite.DeclineInvite, invite.contractId, {}))
+      .catch(() => undefined);
+
+  const inviteInvestor = (invitee: string, funding: string, weight: string) => {
+    if (!myParty) return;
+    inviteCmd
+      .run(() =>
+        session!.ledger.exercise(Vindex.InvestorParty.InviteInvestor, myParty.contractId, {
+          invitee,
+          proposedContribution: {
+            investor: invitee,
+            projectFunding: num(funding),
+            weight: num(weight),
+          },
+        }),
+      )
+      .catch(() => undefined);
+  };
+
+  const castProposalVote = (prop: any, vote: "ACCEPT" | "REJECT") =>
+    govCmd
+      .run(() =>
+        session!.ledger.exercise(Vindex.GovernanceProposal.CastProposalVote, prop.contractId, {
+          voter: party,
+          vote,
+        }),
+      )
+      .catch(() => undefined);
+
+  const openProposalForViolation = (proj: any, actionTag: "ResolveContinue" | "ResolveStop") => {
+    if (!myParty) return;
+    const deadline = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    govCmd
+      .run(async () => {
+        const [proposalCid] = await session!.ledger.exercise(Vindex.InvestorParty.OpenProposal, myParty.contractId, {
+          purpose: `Resolve project violation: ${actionTag === "ResolveContinue" ? "Continue project" : "Stop project"}`,
+          action: { tag: actionTag, value: {} },
+          deadline,
+        });
+        // Auto-vote accept by admin
+        await session!.ledger.exercise(Vindex.GovernanceProposal.CastProposalVote, proposalCid, {
+          voter: party,
+          vote: "ACCEPT",
+        });
+      })
+      .catch(() => undefined);
+  };
+
+  const executeProposal = (prop: any) =>
+    govCmd
+      .run(async () => {
+        if (prop.payload.action.tag === "SelectWinner") {
+          const worker = prop.payload.action.value;
+          const posting = myPostings[0];
+          if (!posting) throw new Error("Posting not found");
+          const app = applications.contracts.find(
+            (a: any) => a.payload.applicant === worker && a.payload.postingId === posting.payload.postingId,
+          );
+          if (!app) throw new Error("Application not found for winner");
+          return session!.ledger.exercise(Vindex.ProjectPosting.SelectWorker, posting.contractId, {
+            actor: party,
+            proposalCid: prop.contractId,
+            applicationCid: app.contractId,
+          });
+        } else if (
+          prop.payload.action.tag === "ResolveContinue" ||
+          prop.payload.action.tag === "ResolveStop"
+        ) {
+          const proj = myProjects.find((p: any) => p.payload.status === "Failed");
+          if (!proj) throw new Error("Failed project not found to resolve");
+          return session!.ledger.exercise(Vindex.Project.ResolveAfterViolation, proj.contractId, {
+            actor: party,
+            proposalCid: prop.contractId,
+          });
+        }
+      })
+      .catch(() => undefined);
+
   return (
     <div>
       <div className="sticky top-[72px] z-30 mb-6 flex items-center justify-between gap-4 flex-wrap border-b border-[var(--border-light)] bg-[var(--bg)]/90 backdrop-blur-sm pt-4 pb-4">
@@ -1569,6 +2245,24 @@ export function InvestorPanel() {
           createParty={createParty}
           createCmd={createCmd}
           setNewPartyMode={setNewPartyMode}
+          invites={invites}
+          inviteCmd={inviteCmd}
+          acceptInvite={acceptInvite}
+          declineInvite={declineInvite}
+          party={party}
+        />
+      )}
+
+      {activeTab === "governance" && (
+        <GovernanceTab
+          myParty={myParty}
+          proposals={proposals}
+          govCmd={govCmd}
+          castProposalVote={castProposalVote}
+          executeProposal={executeProposal}
+          inviteInvestor={inviteInvestor}
+          inviteCmd={inviteCmd}
+          party={party}
         />
       )}
 
@@ -1610,6 +2304,10 @@ export function InvestorPanel() {
           handleTakeDown={handleTakeDown}
           selectApplicant={selectApplicant}
           selectCmd={selectCmd}
+          holdings={holdings.contracts}
+          postHoldingId={postHoldingId}
+          setPostHoldingId={setPostHoldingId}
+          party={party}
         />
       )}
 
@@ -1639,6 +2337,18 @@ export function InvestorPanel() {
           approvePlan={approvePlan}
           rejectPlan={rejectPlan}
           planRequired={planRequired}
+          openProposalForViolation={openProposalForViolation}
+          myParty={myParty}
+          party={party}
+        />
+      )}
+
+      {activeTab === "token" && (
+        <TokenTab
+          registries={registries.contracts}
+          holdings={holdings.contracts}
+          tokenCmd={tokenCmd}
+          party={party}
         />
       )}
     </div>

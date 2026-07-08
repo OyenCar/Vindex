@@ -4,7 +4,7 @@
 const crypto = require("node:crypto");
 const LedgerMod = require("@daml/ledger");
 const Ledger = LedgerMod.default || LedgerMod;
-const { Vindex } = require("@daml.js/vindex-0.1.0");
+const { Vindex } = require("@daml.js/vindex-0.2.0");
 
 const investor = process.argv[2];
 const agent = process.argv[3];

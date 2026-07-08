@@ -33,6 +33,8 @@ export const damlConfig = {
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean),
+  loopNetwork: (process.env.NEXT_PUBLIC_LOOP_NETWORK ?? "devnet") as "local" | "devnet" | "mainnet",
+  loopAppName: process.env.NEXT_PUBLIC_LOOP_APP_NAME ?? "Vindex",
 } as const;
 
 export function explorerHint(): string {

@@ -9,8 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@daml.js/vindex-0.1.0": "file:./daml.js/vindex-0.1.0",
+    "@daml.js/vindex-0.2.0": "file:./daml.js/vindex-0.2.0/vindex-0.2.0",
+    "@daml.js/daml-prim-DA-Types-1.0.0": "file:./daml.js/daml-prim-DA-Types-1.0.0",
+    "@daml.js/daml-stdlib-DA-Time-Types-1.0.0": "file:./daml.js/daml-stdlib-DA-Time-Types-1.0.0",
+    "@daml.js/ghc-stdlib-DA-Internal-Template-1.0.0": "file:./daml.js/ghc-stdlib-DA-Internal-Template-1.0.0",
     "@daml/types": "3.5.2",
+    "@fivenorth/loop-sdk": "^0.13.1",
     "animejs": "^4.5.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

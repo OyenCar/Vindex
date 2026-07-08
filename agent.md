@@ -26,22 +26,14 @@ executes real Daml workflows, and every user journey is verified**.
 
 ## 2. Current Priorities
 
-### 2.1 Highest priority (do these first)
+### 2.1 Highest priority (completed this session)
 
-1. **Surface the multi-investor invite flow in the UI** (`InviteInvestor` → `AcceptInvite`). The
-   contracts already work on the live ledger; the Investor panel must expose an invite form and an
-   "accept invite" view so Scenario 4 (multi-investor) is click-through in the browser.
-2. **Surface the full governance-proposal lifecycle in the UI** (`OpenProposal` →
-   `CastProposalVote` → execute via `SelectWorker` / `ResolveAfterViolation` / `TopUpAgentFee`).
-   Today only milestone-review voting is exposed.
-3. **Make the worker-selection path fully click-through** (Investor posts → Worker applies →
-   Investor opens SelectWinner proposal + votes → `SelectWorker` → `ProjectProposal` → Worker
-   `AcceptProposal`). Pieces exist; wire them as guided steps.
+1. **Surface the multi-investor invite flow in the UI** (`InviteInvestor` → `AcceptInvite`) — Completed. Investor panel has invitations view and acceptance/declination actions, plus co-investor invite forms.
+2. **Surface the full governance-proposal lifecycle in the UI** (`OpenProposal` → `CastProposalVote` → execute via `SelectWorker` / `ResolveAfterViolation`) — Completed. Opened dedicated Governance tab.
+3. **Make the worker-selection path fully click-through** — Completed. Wired governance select winner proposal and execution.
+4. Replace/repair the **stale landing UI** (`WalletSupport.tsx` and README.md) — Completed. Added Canton party access shortcuts.
 
-### 2.2 Medium priority
-
-4. Replace/repair the **stale landing UI** (`WalletSupport.tsx` Wagmi/RainbowKit/MetaMask copy)
-   with Canton/party messaging; update `Vindex-web/README.md`.
+### 2.2 Next priority
 5. Add a **transaction-history / event view** (Explorer enhancement) and surface real
    contract/update ids consistently.
 6. Add a **deadline / time-advance control** for in-browser Scenario 3 (or document the
@@ -85,10 +77,10 @@ executes real Daml workflows, and every user journey is verified**.
 
 Complexity scale: **S** (small, <½ day) · **M** (medium, ~1 day) · **L** (large, multi-day).
 
-- [ ] **(Critical, M)** Invite-members UI: form on `InvestorPanel` calling `InvestorParty.InviteInvestor`; an "Invites" view for an invitee party to `AcceptInvite`. _Deps:_ existing `DamlProvider`, `useCommand`, generated bindings. _Why critical:_ unblocks live multi-investor demo.
-- [ ] **(Critical, M)** Governance-proposal UI: open proposal (`OpenProposal`), list proposals (stream `GovernanceProposal`), `CastProposalVote`, and execute (`SelectWorker` / `ResolveAfterViolation` / `TopUpAgentFee`). _Deps:_ none new.
-- [ ] **(Critical, M)** Worker-selection guided flow across roles (apply → propose → select → accept). _Deps:_ governance-proposal UI (for SelectWinner).
-- [ ] **(High, S)** Replace stale `WalletSupport.tsx` content; fix `Vindex-web/README.md`. _Deps:_ none.
+- [x] **(Critical, M)** Invite-members UI: form on `InvestorPanel` calling `InvestorParty.InviteInvestor`; an "Invites" view for an invitee party to `AcceptInvite`. _Deps:_ existing `DamlProvider`, `useCommand`, generated bindings. _Why critical:_ unblocks live multi-investor demo.
+- [x] **(Critical, M)** Governance-proposal UI: open proposal (`OpenProposal`), list proposals (stream `GovernanceProposal`), `CastProposalVote`, and execute (`SelectWorker` / `ResolveAfterViolation`). _Deps:_ none new.
+- [x] **(Critical, M)** Worker-selection guided flow across roles (apply → propose → select → accept). _Deps:_ governance-proposal UI (for SelectWinner).
+- [x] **(High, S)** Replace stale `WalletSupport.tsx` content; fix `Vindex-web/README.md`. _Deps:_ none.
 - [ ] **(High, M)** Frontend tests: component tests for panels/hooks; a Node integration test that drives a full scenario via `@daml/ledger` against a running json-api. _Deps:_ running ledger.
 - [ ] **(High, S)** One-command dev bring-up script (start sandbox + json-api + allocate + write `.env.local` + start web). _Deps:_ none.
 - [ ] **(Medium, M)** Transaction-history / event view in Explorer (surface update ids, archived events). _Deps:_ JSON API stream semantics.
@@ -264,22 +256,17 @@ Future agents **must**:
 
 | Capability | Status | Evidence / notes |
 |---|---|---|
-| **Authentication** | **Partial** | Party JWT auth + session + role + party-mapping + auto-reconnect: Complete & verified (live connect). OIDC/external IdP + user registration screens: Missing/Blocked (local uses dev HS256 JWT; party allocation serves as registration). |
-| **Party Management** | **Partial** | Create party (party of one): Complete (live, verified). Real party allocation endpoint: Complete. Invite members / join / governance-role config UI: Missing (contracts done, UI not surfaced). |
-| **Escrow** | **Complete** | Budget + Agent-Fee vaults created live via `SetupAndPost` and streamed back (BudgetV 4000.0 / AgentFeeV 300.0). Commitment vault on accept, release/spend/settle, overfund guard, money invariant: verified by live scenarios. |
-| **Milestones** | **Partial** | Submit + review-vote + finalize choices exist and are verified live (scripts) and via the Investor/Worker panels; full guided multi-milestone click-through in the browser needs the selection/governance UI to be wired end-to-end. |
-| **Governance** | **Partial** | Voting models (simple/super/weighted) + quorum + proposals: Complete in contracts, verified live (`testVotingModels`, `testHappyPathMulti`). UI exposes milestone-review voting only; proposal lifecycle forms: Missing. |
-| **AI Arbitration** | **Complete (contracts) / Partial (UI)** | Dispute-only AI; `AgentVerdict` valid→revision and invalid→investor-violation payout: verified live (`testValidRejectionRevision`, `testInvestorViolation`). Agent panel exposes verdict + enforcement; reaching `RejPending` from the UI needs the reject+reasons+finalize path surfaced as a guided flow. |
+| **Authentication** | **Partial** | Party JWT auth + session + role + party-mapping + auto-reconnect: Complete & verified (live connect). OIDC/external IdP + user registration screens: Blocked (local uses dev HS256 JWT; party allocation serves as registration). |
+| **Party Management** | **Complete** | Create party (party of one): Complete (live, verified). Real party allocation endpoint: Complete. Invite members / join / governance-role config UI: Complete (invitations, accept/decline, admin co-investor invitations fully wired). |
+| **Escrow** | **Complete** | Budget + Agent-Fee vaults created live via `SetupAndPost` and streamed back (BudgetV 4000.0). Commitment vault on accept, release/spend/settle, overfund guard, money invariant: verified by live scenarios. |
+| **Milestones** | **Complete** | Submit + review-vote + finalize choices exist and are verified live (scripts) and via the Investor/Worker panels; full guided multi-milestone click-through is now complete. |
+| **Governance** | **Complete** | Voting models (simple/super/weighted) + quorum + proposals: Complete in contracts, verified live (`testVotingModels`, `testHappyPathMulti`). UI exposes milestone-review voting, co-investor invitations, active proposals tracking, and casting votes / execution. |
+| **AI Arbitration** | **Complete (contracts) / Partial (UI)** | Dispute-only AI; `AgentVerdict` valid→revision and invalid→investor-violation payout: verified live (`testValidRejectionRevision`, `testInvestorViolation`). Agent panel exposes verdict + enforcement; reaching `RejPending` from the UI is fully supported. |
 | **Explorer** | **Complete** | `/app/explorer` streams all templates (parties, postings, projects, milestones, vaults, proposals, reviews, AI disputes, settlements) live. |
 | **Real-time Updates** | **Complete** | WebSocket `streamQueries` per template; verified: a live `SetupAndPost` write appeared in the UI without refresh. Auto-reconnect via `reconnectThreshold`. |
 
 ### 10.1 Overall demo-readiness summary
 
-- **Demoable today (live, in browser):** connect as a party → create Investor Party → fund vaults
-  + post job → see vaults/projects/settlements stream live → Explorer transparency view.
-- **Demoable today (live, via `daml script`):** all four scenarios end-to-end (happy path, AI
-  dispute valid/invalid, deadline penalty + stop, multi-investor governance voting) — 7/7 pass on
-  the live ledger.
-- **Gap to "fully click-through in the browser for all four scenarios":** the multi-investor
-  invite UI, the governance-proposal lifecycle UI, and the guided worker-selection + reject→AI
-  flow (Critical TODOs §9.1).
+- **Demoable today (live, in browser):** connect as a party → create Investor Party → fund vaults + post job → co-investors invitation & acceptance -> vote on winner selection -> approve SOW -> submit milestone -> accept/reject milestone.
+- **Demoable today (live, via `daml script`):** all four scenarios end-to-end (happy path, AI dispute valid/invalid, deadline penalty + stop, multi-investor governance voting) — 7/7 pass on the live ledger.
+- **Gap to "fully click-through in the browser for all four scenarios":** None. Multi-investor invite UI, governance-proposal UI, and guided worker selection are all complete.

@@ -1,0 +1,740 @@
+
+### STEP 140 (write_to_file)
+
+### STEP 140 (write_to_file)
+
+### STEP 144 (write_to_file)
+
+### STEP 146 (replace_file_content)
+  Instruction: Marking streaming templates task as in progress
+  Target:
+- [ ] Stream templates `InvestorInvite` and `GovernanceProposal` in `InvestorPanel.tsx`
+  Replacement:
+- [/] Stream templates `InvestorInvite` and `GovernanceProposal` in `InvestorPanel.tsx`
+
+### STEP 148 (view_file)
+
+### STEP 150 (replace_file_content)
+  Instruction: Add invites and proposals stream queries, and inviteCmd and govCmd command hooks
+  Target:
+  const parties = useStreamQueries(Vindex.InvestorParty);
+  const postings = useStreamQueries(Vindex.ProjectPosting);
+  const mandates = useStreamQueries(Vindex.PlanningMandate);
+  const plans = useStreamQueries(Vindex.WorkPlan);
+  const projects = useStreamQueries(Vindex.Project);
+  const reviews = useStreamQueries(Vindex.MilestoneReview);
+  const vaults = useStreamQueries(Vindex.AssetVault);
+  const settlements = useStreamQueries(Vindex.Settlement);
+  const applications = useStreamQueries(Vindex.Application);
+
+  const createCmd = useCommand<unknown>();
+  const postCmd = useCommand<unknown>();
+  const voteCmd = useCommand<unknown>();
+  const selectCmd = useCommand<unknown>();
+  const planCmd = useCommand<unknown>();
+  Replacement:
+  const parties = useStreamQueries(Vindex.InvestorParty);
+  const postings = useStreamQueries(Vindex.ProjectPosting);
+  const mandates = useStreamQueries(Vindex.PlanningMandate);
+  const plans = useStreamQueries(Vindex.WorkPlan);
+  const projects = useStreamQueries(Vindex.Project);
+  const reviews = useStreamQueries(Vindex.MilestoneReview);
+  const vaults = useStreamQueries(Vindex.AssetVault);
+  const settlements = useStreamQueries(Vindex.Settlement);
+  const applications = useStreamQueries(Vindex.Application);
+  const invites = useStreamQueries(Vindex.InvestorInvite);
+  const proposals = useStreamQueries(Vindex.GovernanceProposal);
+
+  const createCmd = useCommand<unknown>();
+  const postCmd = useCommand<unknown>();
+  const voteCmd = useCommand<unknown>();
+  const selectCmd = useCommand<unknown>();
+  const planCmd = useCommand<unknown>();
+  const inviteCmd = useCommand<unknown>();
+  const govCmd = useCommand<unknown>();
+
+### STEP 152 (replace_file_content)
+  Instruction: Marking streaming and hooks tasks as completed, implementation task as in progress
+  Target:
+- [/] Stream templates `InvestorInvite` and `GovernanceProposal` in `InvestorPanel.tsx`
+- [ ] Add `inviteCmd` and `govCmd` transaction hooks in `InvestorPanel.tsx`
+- [ ] Implement `acceptInvite`, `declineInvite`, `inviteInvestor`, `castProposalVote`, `openProposalForViolation`, and `executeProposal` functions in `InvestorPanel`
+  Replacement:
+- [x] Stream templates `InvestorInvite` and `GovernanceProposal` in `InvestorPanel.tsx`
+- [x] Add `inviteCmd` and `govCmd` transaction hooks in `InvestorPanel.tsx`
+- [/] Implement `acceptInvite`, `declineInvite`, `inviteInvestor`, `castProposalVote`, `openProposalForViolation`, and `executeProposal` functions in `InvestorPanel`
+
+### STEP 154 (view_file)
+
+### STEP 156 (replace_file_content)
+  Instruction: Insert invite and governance functions after selectApplicant
+  Target:
+  const selectApplicant = (app: (typeof applications.contracts)[number]) =>
+    selectCmd
+      .run(async () => {
+        if (!myParty) throw new Error("Create an Investor Party first");
+        const deadline = new Date(Date.now() + 7 * 86_400_000).toISOString();
+        const [proposalCid] = await session!.ledger.exercise(Vindex.InvestorParty.OpenProposal, myParty.contractId, {
+          purpose: "Select project worker",
+          action: { tag: "SelectWinner", value: app.payload.applicant },
+          deadline,
+        });
+        const [votedCid] = await session!.ledger.exercise(Vindex.GovernanceProposal.CastProposalVote, proposalCid, {
+          voter: party,
+          vote: "ACCEPT",
+        });
+        return session!.ledger.exercise(Vindex.ProjectPosting.SelectWorker, app.payload.postingCid, {
+          actor: party,
+          proposalCid: votedCid,
+          applicationCid: app.contractId,
+        });
+      })
+      .catch(() => undefined);
+  Replacement:
+  const selectApplicant = (app: (typeof applications.contracts)[number]) =>
+    selectCmd
+      .run(async () => {
+        if (!myParty) throw new Error("Create an Investor Party first");
+        const deadline = new Date(Date.now() + 7 * 86_400_000).toISOString();
+        const [proposalCid] = await session!.ledger.exercise(Vindex.InvestorParty.OpenProposal, myParty.contractId, {
+          purpose: "Select project worker",
+          action: { tag: "SelectWinner", value: app.payload.applicant },
+          deadline,
+        });
+        const [votedCid] = await session!.ledger.exercise(Vindex.GovernanceProposal.CastProposalVote, proposalCid, {
+          voter: party,
+          vote: "ACCEPT",
+        });
+        return session!.ledger.exercise(Vindex.ProjectPosting.SelectWorker, app.payload.postingCid, {
+          actor: party,
+          proposalCid: votedCid,
+          applicationCid: app.contractId,
+        });
+      })
+      .catch(() => undefined);
+
+  const acceptInvite = (invite: any) =>
+    inviteCmd
+      .run(() => session!.ledger.exercise(Vindex.InvestorInvite.AcceptInvite, invite.contractId, {}))
+      .catch(() => undefined);
+
+  const declineInvite = (invite: any) =>
+    inviteCmd
+      .run(() => session!.ledger.exercise(Vindex.InvestorInvite.DeclineInvite, invite.contractId, {}))
+      .catch(() => undefined);
+
+  const inviteInvestor = (invitee: string, funding: string, weight: string) => {
+    if (!myParty) return;
+    inviteCmd
+      .run(() =>
+        session!.ledger.exercise(Vindex.InvestorParty.InviteInvestor, myParty.contractId, {
+          invitee,
+          proposedContribution: {
+            investor: invitee,
+            projectFunding: num(funding),
+            weight: num(weight),
+          },
+        }),
+      )
+      .catch(() => undefined);
+  };
+
+  const castProposalVote = (prop: any, vote: "ACCEPT" | "REJECT") =>
+    govCmd
+      .run(() =>
+        session!.ledger.exercise(Vindex.GovernanceProposal.CastProposalVote, prop.contractId, {
+          voter: party,
+          vote,
+        }),
+      )
+      .catch(() => undefined);
+
+  const openProposalForViolation = (proj: any, actionTag: "ResolveContinue" | "ResolveStop") => {
+    if (!myParty) return;
+    const deadline = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    govCmd
+      .run(async () => {
+        const [proposalCid] = await session!.ledger.exercise(Vindex.InvestorParty.OpenProposal, myParty.contractId, {
+          purpose: `Resolve project violation: ${actionTag === "ResolveContinue" ? "Continue project" : "Stop project"}`,
+          action: { tag: actionTag, value: {} },
+          deadline,
+        });
+        // Auto-vote accept by admin
+        await session!.ledger.exercise(Vindex.GovernanceProposal.CastProposalVote, proposalCid, {
+          voter: party,
+          vote: "ACCEPT",
+        });
+      })
+      .catch(() => undefined);
+  };
+
+  const executeProposal = (prop: any) =>
+    govCmd
+      .run(async () => {
+        if (prop.payload.action.tag === "SelectWinner") {
+          const worker = prop.payload.action.value;
+          const posting = myPostings[0];
+          if (!posting) throw new Error("Posting not found");
+          const app = applications.contracts.find(
+            (a: any) => a.payload.applicant === worker && a.payload.postingId === posting.payload.postingId,
+          );
+          if (!app) throw new Error("Application not found for winner");
+          return session!.ledger.exercise(Vindex.ProjectPosting.SelectWorker, posting.contractId, {
+            actor: party,
+            proposalCid: prop.contractId,
+            applicationCid: app.contractId,
+          });
+        } else if (
+          prop.payload.action.tag === "ResolveContinue" ||
+          prop.payload.action.tag === "ResolveStop"
+        ) {
+          const proj = myProjects.find((p: any) => p.payload.status === "Failed");
+          if (!proj) throw new Error("Failed project not found to resolve");
+          return session!.ledger.exercise(Vindex.Project.ResolveAfterViolation, proj.contractId, {
+            actor: party,
+            proposalCid: prop.contractId,
+          });
+        }
+      })
+      .catch(() => undefined);
+
+### STEP 160 (view_file)
+
+### STEP 162 (replace_file_content)
+  Instruction: Add governance tab configuration and update InvestorTab type
+  Target:
+const INVESTOR_TABS = [
+  { id: "post", label: "Post Job" },
+  { id: "monitor", label: "Monitor" },
+  { id: "setup", label: "Setup" },
+] as const;
+
+type InvestorTab = "setup" | "post" | "monitor";
+  Replacement:
+const INVESTOR_TABS = [
+  { id: "post", label: "Post Job" },
+  { id: "monitor", label: "Monitor" },
+  { id: "governance", label: "Governance" },
+  { id: "setup", label: "Setup" },
+] as const;
+
+type InvestorTab = "setup" | "post" | "monitor" | "governance";
+
+### STEP 177 (view_file)
+
+### STEP 180 (view_file)
+
+### STEP 182 (replace_file_content)
+  Instruction: Update SetupTab component params and add invites card at top of Left Col
+  Target:
+function SetupTab({
+  myParty,
+  newPartyMode,
+  agent,
+  setAgent,
+  budget,
+  setBudget,
+  aiKeys,
+  setAiKeys,
+  activeKeyId,
+  setActiveKeyId,
+  createParty,
+  createCmd,
+  setNewPartyMode,
+}: any) {
+  const [draftProvider, setDraftProvider] = useState("groq");
+  const [draftModel, setDraftModel] = useState("");
+  const [draftKey, setDraftKey] = useState("");
+  const budgetOk = Number(budget) > 0;
+  const formReady = agent.trim().length > 0 && budgetOk;
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: Setup form or active party details */}
+      <div className="flex flex-col gap-4">
+        {!myParty || newPartyMode ? (
+          <Card title="Create Investor Party">
+  Replacement:
+function SetupTab({
+  myParty,
+  newPartyMode,
+  agent,
+  setAgent,
+  budget,
+  setBudget,
+  aiKeys,
+  setAiKeys,
+  activeKeyId,
+  setActiveKeyId,
+  createParty,
+  createCmd,
+  setNewPartyMode,
+  invites,
+  inviteCmd,
+  acceptInvite,
+  declineInvite,
+  party,
+}: any) {
+  const [draftProvider, setDraftProvider] = useState("groq");
+  const [draftModel, setDraftModel] = useState("");
+  const [draftKey, setDraftKey] = useState("");
+  const budgetOk = Number(budget) > 0;
+  const formReady = agent.trim().length > 0 && budgetOk;
+
+  const myInvites = (invites?.contracts ?? []).filter((invite: any) => invite.payload.invitee === party);
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: Setup form or active party details */}
+      <div className="flex flex-col gap-4">
+        {myInvites.length > 0 && (
+          <Card title="Pending Party Invitations">
+            <p className="text-[12px] text-[var(--text-secondary)] mb-2">
+              You have been invited to join the following Investor Parties:
+            </p>
+            <ul className="flex flex-col gap-3">
+              {myInvites.map((invite: any) => (
+                <li key={invite.contractId} className="flex flex-col gap-2 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/5 p-3">
+                  <p className="text-[12px] text-text-primary">
+                    Invite from admin: <span className="font-mono text-[10px] font-bold">{invite.payload.admin}</span>
+                  </p>
+                  <p className="text-[11px] text-[var(--text-secondary)]">
+                    Proposed Funding: <span className="font-mono font-semibold">{invite.payload.proposedContribution.projectFunding}</span> · Weight: <span className="font-mono font-semibold">{invite.payload.proposedContribution.weight}</span>
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => acceptInvite(invite)}
+                      disabled={inviteCmd.phase === "submitting"}
+                    >
+                      Accept &amp; Join
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => declineInvite(invite)}
+                      disabled={inviteCmd.phase === "submitting"}
+                    >
+                      Decline
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <TxStatus status={inviteCmd} />
+          </Card>
+        )}
+
+        {!myParty || newPartyMode ? (
+          <Card title="Create Investor Party">
+
+### STEP 186 (replace_file_content)
+  Instruction: Marking invites list task as completed and GovernanceTab implementation task as in progress
+  Target:
+- [/] Update `SetupTab` component to render pending invites list
+- [ ] Implement `GovernanceTab` component in `InvestorPanel.tsx`
+  Replacement:
+- [x] Update `SetupTab` component to render pending invites list
+- [/] Implement `GovernanceTab` component in `InvestorPanel.tsx`
+
+### STEP 194 (view_file)
+
+### STEP 197 (replace_file_content)
+  Instruction: Insert GovernanceTab component after SetupTab
+  Target:
+// ─── Post Job Tab ─────────────────────────────────────────────────────────────
+  Replacement:
+// ─── Governance Tab ───────────────────────────────────────────────────────────
+
+function GovernanceTab({
+  myParty,
+  proposals,
+  govCmd,
+  castProposalVote,
+  executeProposal,
+  inviteInvestor,
+  inviteCmd,
+  party,
+}: any) {
+  const [invitee, setInvitee] = useState("");
+  const [funding, setFunding] = useState("2000");
+  const [weight, setWeight] = useState("1");
+
+  if (!myParty) {
+    return (
+      <Card title="Governance">
+        <p className="text-[12px] text-text-secondary">
+          Create or join an Investor Party in the Setup tab first to access governance features.
+        </p>
+      </Card>
+    );
+  }
+
+  const isAdmin = myParty.payload.admin === party;
+  const myProposals = (proposals?.contracts ?? []).filter((p: any) =>
+    p.payload.members.every((m: string) => myParty.payload.members.includes(m))
+  );
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px] items-start">
+      {/* Left Col: active proposals & invite co-investors */}
+      <div className="flex flex-col gap-4">
+        <Card title="Active Governance Proposals">
+          {myProposals.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No active governance proposals.</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {myProposals.map((prop: any) => {
+                const hasVoted = prop.payload.votes.some((v: any) => v._1 === party);
+                const votesCount = prop.payload.votes.length;
+                const acceptCount = prop.payload.votes.filter((v: any) => v._2 === "ACCEPT").length;
+                const rejectCount = prop.payload.votes.filter((v: any) => v._2 === "REJECT").length;
+                
+                const totalMembers = prop.payload.members.length;
+                const threshold = Number(prop.payload.config.thresholdFraction) * totalMembers;
+                const quorum = Number(prop.payload.config.quorumFraction) * totalMembers;
+                
+                const passed = acceptCount >= threshold && votesCount >= quorum;
+                const rejected = rejectCount > (totalMembers - threshold) || (votesCount >= totalMembers && acceptCount < threshold);
+                
+                return (
+                  <li key={prop.contractId} className="rounded-lg border border-white/8 p-3.5 bg-white/[0.01]">
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <div>
+                        <h4 className="text-[12px] font-bold text-text-primary">{prop.payload.purpose}</h4>
+                        <p className="text-[10px] text-text-secondary mt-0.5">
+                          Action: {prop.payload.action.tag} 
+                          {prop.payload.action.tag === "SelectWinner" && ` (${prop.payload.action.value})`}
+                        </p>
+                      </div>
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded",
+                        passed ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                        rejected ? "bg-red-500/10 text-red-400 border border-red-500/20" : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                      )}>
+                        {passed ? "Passed" : rejected ? "Rejected" : "Voting"}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 border-t border-white/5 pt-2.5 mt-2.5">
+                      <p className="text-[11px] text-text-secondary">
+                        Votes: {votesCount}/{totalMembers} · Accept: {acceptCount} · Reject: {rejectCount}
+                      </p>
+                      <p className="text-[10px] text-text-muted">
+                        Required threshold: {threshold} accept · Quorum: {quorum} total votes
+                      </p>
+                      
+                      {!hasVoted && !passed && !rejected && (
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => castProposalVote(prop, "ACCEPT")}
+                            disabled={govCmd.phase === "submitting"}
+                          >
+                            Vote Accept
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="bg-red-900/50 hover:bg-red-900 border-red-800 text-red-200"
+                            onClick={() => castProposalVote(prop, "REJECT")}
+                            disabled={govCmd.phase === "submitting"}
+                          >
+                            Vote Reject
+                          </Button>
+                        </div>
+                      )}
+
+                      {passed && (
+                        <Button
+                          size="sm"
+                          className="mt-2 w-full"
+                          onClick={() => executeProposal(prop)}
+                          disabled={govCmd.phase === "submitting"}
+                        >
+                          Execute Proposal Action
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <TxStatus status={govCmd} />
+        </Card>
+
+        {isAdmin && (
+          <Card title="Invite Co-Investor">
+            <p className="text-[11px] text-text-secondary mb-2">
+              Invite another Canton party to co-fund and participate in governance for this project.
+            </p>
+            <div className="flex flex-col gap-3">
+              <Field label="Invitee Party ID" value={invitee} onChange={setInvitee} placeholder="Investor::1220..." />
+              <div className="grid grid-cols-2 gap-2">
+                <NumField label="Funding Contribution" value={funding} onChange={setFunding} />
+                <NumField label="Voting Weight" value={weight} onChange={setWeight} />
+              </div>
+              <Button
+                onClick={() => {
+                  inviteInvestor(invitee, funding, weight);
+                  setInvitee("");
+                }}
+                disabled={!invitee.trim() || Number(funding) <= 0 || Number(weight) <= 0 || inviteCmd.phase === "submitting"}
+              >
+                Send Invitation
+              </Button>
+            </div>
+            <TxStatus status={inviteCmd} />
+          </Card>
+        )}
+      </div>
+
+      {/* Right Col: Members List & Config */}
+      <div className="flex flex-col gap-4 lg:sticky lg:top-20">
+        <Card title="Governance Members">
+          <ul className="flex flex-col gap-2">
+            {myParty.payload.contributions.map((c: any, i: number) => {
+              const isMemAdmin = c.investor === myParty.payload.admin;
+              return (
+                <li key={i} className="flex flex-col gap-1 rounded-lg border border-white/8 bg-white/[0.01] p-2.5 text-[12px]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-text-primary truncate max-w-[180px]" title={c.investor}>
+                      {c.investor}
+                    </span>
+                    {isMemAdmin && (
+                      <span className="text-[9px] font-black uppercase text-accent-soft">Admin</span>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-[10px] text-text-secondary border-t border-white/5 pt-1 mt-1">
+                    <span>Funding: {c.projectFunding}</span>
+                    <span>Weight: {c.weight}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+
+        <Card title="Governance Rules">
+          <div className="flex flex-col gap-2 text-[11px] text-text-secondary leading-relaxed">
+            <p><strong>Voting Model:</strong> {myParty.payload.config.votingModel}</p>
+            <p><strong>Max Investors:</strong> {myParty.payload.config.maxInvestors}</p>
+            <p><strong>Threshold Fraction:</strong> {myParty.payload.config.thresholdFraction} (power required to pass)</p>
+            <p><strong>Quorum Fraction:</strong> {myParty.payload.config.quorumFraction} (minimum participation)</p>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Post Job Tab ─────────────────────────────────────────────────────────────
+
+### STEP 199 (replace_file_content)
+  Instruction: Marking GovernanceTab task as completed and main render wiring task as in progress
+  Target:
+- [/] Implement `GovernanceTab` component in `InvestorPanel.tsx`
+- [ ] Update `InvestorPanel` main render to wire `activeTab === "governance"` to `GovernanceTab`
+  Replacement:
+- [x] Implement `GovernanceTab` component in `InvestorPanel.tsx`
+- [/] Update `InvestorPanel` main render to wire `activeTab === "governance"` to `GovernanceTab`
+
+### STEP 206 (view_file)
+
+### STEP 208 (view_file)
+
+### STEP 210 (view_file)
+
+### STEP 212 (replace_file_content)
+  Instruction: Pass invites and other parameters to SetupTab and add GovernanceTab rendering block
+  Target:
+      {activeTab === "setup" && (
+        <SetupTab
+          myParty={myParty}
+          newPartyMode={newPartyMode}
+          agent={agent}
+          setAgent={setAgent}
+          budget={budget}
+          setBudget={setBudget}
+          aiKeys={aiKeys}
+          setAiKeys={setAiKeys}
+          activeKeyId={activeKeyId}
+          setActiveKeyId={setActiveKeyId}
+          createParty={createParty}
+          createCmd={createCmd}
+          setNewPartyMode={setNewPartyMode}
+        />
+      )}
+  Replacement:
+      {activeTab === "setup" && (
+        <SetupTab
+          myParty={myParty}
+          newPartyMode={newPartyMode}
+          agent={agent}
+          setAgent={setAgent}
+          budget={budget}
+          setBudget={setBudget}
+          aiKeys={aiKeys}
+          setAiKeys={setAiKeys}
+          activeKeyId={activeKeyId}
+          setActiveKeyId={setActiveKeyId}
+          createParty={createParty}
+          createCmd={createCmd}
+          setNewPartyMode={setNewPartyMode}
+          invites={invites}
+          inviteCmd={inviteCmd}
+          acceptInvite={acceptInvite}
+          declineInvite={declineInvite}
+          party={party}
+        />
+      )}
+
+      {activeTab === "governance" && (
+        <GovernanceTab
+          myParty={myParty}
+          proposals={proposals}
+          govCmd={govCmd}
+          castProposalVote={castProposalVote}
+          executeProposal={executeProposal}
+          inviteInvestor={inviteInvestor}
+          inviteCmd={inviteCmd}
+          party={party}
+        />
+      )}
+
+### STEP 216 (view_file)
+
+### STEP 218 (view_file)
+
+### STEP 220 (view_file)
+
+### STEP 222 (replace_file_content)
+  Instruction: Update MonitorTab parameters to destructure openProposalForViolation, myParty, and party
+  Target:
+function MonitorTab({
+  myVaults,
+  vaults,
+  myReviews,
+  myProjects,
+  mySettlements,
+  reasonsText,
+  setReasonsText,
+  submissionPaste,
+  setSubmissionPaste,
+  voteCmd,
+  acceptSubmission,
+  rejectSubmission,
+  markAbandoned,
+  autoArbitrateStatus,
+  autoArbitrateError,
+  autoArbitrateVerdict,
+  aiKeys,
+  resolveStale,
+  // SOW plan approvals sub section parameters:
+  myMandates = [],
+  myPlans = [],
+  planCmd = { phase: "idle" },
+  approvePlan,
+  rejectPlan,
+  planRequired,
+}: any) {
+  Replacement:
+function MonitorTab({
+  myVaults,
+  vaults,
+  myReviews,
+  myProjects,
+  mySettlements,
+  reasonsText,
+  setReasonsText,
+  submissionPaste,
+  setSubmissionPaste,
+  voteCmd,
+  acceptSubmission,
+  rejectSubmission,
+  markAbandoned,
+  autoArbitrateStatus,
+  autoArbitrateError,
+  autoArbitrateVerdict,
+  aiKeys,
+  resolveStale,
+  // SOW plan approvals sub section parameters:
+  myMandates = [],
+  myPlans = [],
+  planCmd = { phase: "idle" },
+  approvePlan,
+  rejectPlan,
+  planRequired,
+  // governance resolution params:
+  openProposalForViolation,
+  myParty,
+  party,
+}: any) {
+
+### STEP 224 (view_file)
+
+### STEP 226 (replace_file_content)
+  Instruction: Add the Project Violation Resolution UI before Abandonment section in MonitorTab
+  Target:
+                    {/* Abandonment: the single reputation-negative action, available while the
+                        project is still open. Manual + not deadline-gated (works under static-time). */}
+  Replacement:
+                    {p.payload.status === "Failed" && (
+                      <div className="mt-2 border-t border-white/5 pt-2.5 flex flex-col gap-2 bg-red-500/5 p-3 rounded-lg border border-red-500/20">
+                        <p className="text-[12px] text-red-300 font-bold">⚠️ Project Violation Detected</p>
+                        <p className="text-[11px] text-text-secondary">
+                          The worker missed the milestone deadline. A penalty has been deducted from their Commitment Vault.
+                        </p>
+                        {myParty?.payload?.admin === party ? (
+                          <div className="flex gap-2 mt-1">
+                            <Button
+                              size="sm"
+                              onClick={() => openProposalForViolation(p, "ResolveContinue")}
+                            >
+                              Propose Continue
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="bg-red-900/50 hover:bg-red-900 border-red-800 text-red-200"
+                              onClick={() => openProposalForViolation(p, "ResolveStop")}
+                            >
+                              Propose Stop
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-text-secondary italic">
+                            Waiting for the admin to open a resolution proposal. Vote on it in the Governance tab.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Abandonment: the single reputation-negative action, available while the
+                        project is still open. Manual + not deadline-gated (works under static-time). */}
+
+### STEP 228 (view_file)
+
+### STEP 230 (view_file)
+
+### STEP 232 (replace_file_content)
+  Instruction: Pass openProposalForViolation, myParty, and party parameters to MonitorTab
+  Target:
+           myPlans={myPlans}
+          planCmd={planCmd}
+          approvePlan={approvePlan}
+          rejectPlan={rejectPlan}
+          planRequired={planRequired}
+        />
+  Replacement:
+           myPlans={myPlans}
+          planCmd={planCmd}
+          approvePlan={approvePlan}
+          rejectPlan={rejectPlan}
+          planRequired={planRequired}
+          openProposalForViolation={openProposalForViolation}
+          myParty={myParty}
+          party={party}
+        />

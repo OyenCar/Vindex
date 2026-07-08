@@ -42,7 +42,7 @@ export interface Stream<T extends object, K, I extends string, State> {
 }
 
 /** `Vindex:Project` from `#pkg:Vindex:Project` or `pkgid:Vindex:Project` — for template matching. */
-function moduleEntity(templateId: string): string {
+export function moduleEntity(templateId: string): string {
   const parts = templateId.replace(/^#/, "").split(":");
   return parts.slice(-2).join(":");
 }
@@ -53,13 +53,13 @@ function moduleEntity(templateId: string): string {
  * participant read the hash as a package name → `PACKAGE_NAMES_NOT_FOUND`). Codegen emits
  * `templateIdWithPackageId` as `#<pkgId>:…`, so we strip the leading `#`.
  */
-function commandTemplateId<T extends object, K, I extends string>(t: Template<T, K, I>): string {
+export function commandTemplateId<T extends object, K, I extends string>(t: Template<T, K, I>): string {
   const withPkg = (t as unknown as { templateIdWithPackageId?: string }).templateIdWithPackageId;
   if (withPkg) return withPkg.replace(/^#/, "");
   return t.templateId.replace(/^#/, "");
 }
 
-function decodeCreated<T extends object, K, I extends string>(
+export function decodeCreated<T extends object, K, I extends string>(
   template: Template<T, K, I>,
   raw: RawCreated,
 ): CreateEvent<T, K, I> {
@@ -74,7 +74,7 @@ function decodeCreated<T extends object, K, I extends string>(
 }
 
 /** A contract matches the query set if it matches ANY query (each query = all listed fields equal). */
-function matchesQueries<T extends object>(payload: T, queries: Query<T>[]): boolean {
+export function matchesQueries<T extends object>(payload: T, queries: Query<T>[]): boolean {
   if (!queries || queries.length === 0) return true;
   return queries.some((q) =>
     Object.entries(q).every(

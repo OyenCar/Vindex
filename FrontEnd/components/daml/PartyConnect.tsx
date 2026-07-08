@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Landmark, Hammer, LogOut, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Landmark, Hammer, LogOut, Loader2, Wifi, WifiOff, Wallet } from "lucide-react";
 import { useDaml } from "@/components/daml/DamlProvider";
 import { damlConfig, type Role } from "@/lib/daml/config";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ function shorten(p: string) {
 
 /** Party authentication + account management (the Canton analog of "connect wallet"). */
 export function PartyConnect() {
-  const { session, connect, disconnect, connecting, error, online } = useDaml();
+  const { session, connect, connectLoop, disconnect, connecting, error, online } = useDaml();
   const [role, setRole] = useState<Role>("investor");
   const [party, setParty] = useState(damlConfig.parties.investor);
   const [allocating, setAllocating] = useState(false);
@@ -120,6 +120,22 @@ export function PartyConnect() {
       <Button onClick={() => connect(party, role)} disabled={connecting || !party}>
         {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {connecting ? "Authenticating…" : "Connect →"}
+      </Button>
+
+      <div className="flex items-center gap-2 my-1">
+        <span className="h-px bg-[var(--border-light)] flex-1" />
+        <span className="text-[10px] uppercase font-bold text-[var(--text-muted)] tracking-wider">or wallet signing</span>
+        <span className="h-px bg-[var(--border-light)] flex-1" />
+      </div>
+
+      <Button
+        onClick={() => connectLoop(role)}
+        disabled={connecting}
+        variant="secondary"
+        className="w-full flex items-center justify-center gap-2"
+      >
+        {connecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+        {connecting ? "Connecting Wallet…" : "Connect with Loop Wallet"}
       </Button>
     </div>
   );

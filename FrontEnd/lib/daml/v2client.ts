@@ -172,7 +172,7 @@ export async function submitForTransaction(
 
 // --- shape helpers: the participant wraps created events under a few possible keys ---
 
-function normalizeCreated(o: Record<string, unknown>): RawCreated | null {
+export function normalizeCreated(o: Record<string, unknown>): RawCreated | null {
   const contractId = o.contractId ?? o.contract_id;
   const templateId = o.templateId ?? o.template_id;
   const createArgument = o.createArgument ?? o.create_argument ?? o.createArguments ?? o.arguments;

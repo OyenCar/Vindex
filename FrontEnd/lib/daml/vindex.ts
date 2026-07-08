@@ -1,10 +1,12 @@
 /**
- * Typed helpers over the REAL generated bindings (`@daml.js/vindex-0.1.0`).
+ * Typed helpers over the REAL generated bindings (`@daml.js/vindex-0.2.0`).
  * No values are invented — every template/choice here is the one compiled from Vindex.daml.
  */
-import { Vindex } from "@daml.js/vindex-0.1.0";
+import { Vindex } from "@daml.js/vindex-0.2.0";
 
-export { Vindex };
+const { TokenHolding, TokenRegistry } = Vindex.Token;
+
+export { Vindex, TokenHolding, TokenRegistry };
 
 /** Daml `Numeric`/`Int` are JSON strings. */
 export const num = (n: number | string): string => (typeof n === "number" ? n.toString() : n);

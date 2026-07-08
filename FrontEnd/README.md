@@ -21,7 +21,7 @@ npm run build    # production build
 | `components/Hero.tsx` | Eyebrow badge, gradient headline, description, CTAs, staggered reveal; composes metrics + visualization + wallets. |
 | `components/ProtocolVisualization.tsx` | Live SVG protocol diagram (Investor Party → Escrow Vault → Worker → AI Agent) with a travelling packet cycling 3 scenarios: instant release (green), AI arbitration (purple), penalty (amber). |
 | `components/MetricCard.tsx` | Glassmorphism metric card with scroll-triggered count-up + floating motion. |
-| `components/WalletSupport.tsx` | Floating wallet cards (MetaMask / WalletConnect / Coinbase Wallet). |
+| `components/WalletSupport.tsx` | Canton party ID connection shortcuts (Investor Party / Worker / AI Agent). |
 | `components/ui/button.tsx` | shadcn/ui-style button + `buttonVariants`. |
 
 ## Design system
@@ -34,10 +34,6 @@ npm run build    # production build
   (`flow-dash`), and mouse parallax. All animations use transform/opacity for 60fps and
   honor `prefers-reduced-motion`.
 
-## Notes on Wagmi / RainbowKit
+## Canton-Native Authentication
 
-The wallet section is **presentational** so the page builds and runs with zero config (no
-WalletConnect `projectId` required). To wire real connections, add `wagmi`, `viem`,
-`@rainbow-me/rainbowkit`, and `@tanstack/react-query`, create a `Providers` client component
-with `WagmiProvider` + `RainbowKitProvider`, wrap `app/layout.tsx`, and replace the cards in
-`WalletSupport.tsx` with RainbowKit's `ConnectButton`.
+Vindex is built natively for the Canton Network. It does NOT use EVM wallets (such as MetaMask or WalletConnect). Authentication is handled via Canton Party IDs and ledger JWTs, which are proxy-mapped through the Daml JSON Ledger API. Use the connection shortcuts to connect as an Investor, Worker, or AI Agent.

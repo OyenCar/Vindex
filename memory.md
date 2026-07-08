@@ -885,3 +885,23 @@ Fix habit: don't restart the sandbox mid-session; after any restart run `seed.ps
   restarted; the UI was showing ghost data (§13.4).
 - Session net: 6 fixes applied, all `tsc --noEmit` clean (0 errors). Pre-existing `WorkerPanel:805`
   type error fixed as part of this.
+
+### 13.8 Multi-Investor Invite & Governance UI Implementation (2026-07-08)
+
+- **Completed Multi-Investor Invite flow:**
+  - Streamed `Vindex.InvestorInvite` template.
+  - Implemented `acceptInvite` (calling `AcceptInvite`) and `declineInvite` (calling `DeclineInvite`) in `InvestorPanel.tsx`.
+  - Added pending invitations card on top of `SetupTab` to let invited parties accept/decline.
+  - Implemented `inviteInvestor` (calling `InviteInvestor`) to let the admin invite other parties with specific contributions and weights.
+- **Completed Governance-Proposal UI:**
+  - Streamed `Vindex.GovernanceProposal` template.
+  - Added a dedicated "Governance" tab inside the `InvestorPanel` containing active governance proposals (Select Winner, Continue/Stop project), current votes list/tally, voting buttons (ACCEPT/REJECT), and the co-investor invitation form.
+  - Added proposal execution paths via `SelectWorker` on `ProjectPosting` (worker selection) and `ResolveAfterViolation` on `Project` (project resolution).
+  - Gated the invite form and violation-proposal buttons so that they are only accessible to the admin of the party.
+- **Completed Project Violation Resolution:**
+  - Added an inline card to projects in `Failed` status inside `MonitorTab` that lets the admin propose a resolution (`ResolveContinue` or `ResolveStop`) via on-ledger governance.
+- **Fixed Stale EVM Copy:**
+  - Removed stale references to MetaMask/RainbowKit in `FrontEnd/README.md` and clarified Canton-native login.
+- **Verification:**
+  - TypeScript type-checking `npx tsc --noEmit` -> **0 errors**.
+  - Dev server `npm run dev` -> **Server started successfully and is ready in 3.6s**.
