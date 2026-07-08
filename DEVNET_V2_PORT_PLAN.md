@@ -19,9 +19,53 @@
   - New package id: `24e57209c46a06e87d6aa9bcead5bfb294de4b203e1074dd88122bc08c094471`
   - Backups kept: `SmartContract/vindex-0.1.0.LF1-backup.dar`, `SmartContract/daml.yaml.LF1-backup`.
 
-**Next:** (1) allocate 3 parties (`Investor`/`Worker`/`Agent`) on the participant + grant the M2M user
-`actAs` each — *invasive on a shared node, do deliberately*; (2) build the frontend v2 client shim +
-v2 codegen (below); (3) port `Test.daml` to daml-script 3.x (deferred; not needed for upload).
+### Parties allocated + frontend ported (2026-07-07, later)
+
+- **3 parties allocated** on the participant, all namespace `…::1220a14c…`, hints exactly
+  `Investor`/`Worker`/`Agent` (so `isWorkerParty` + frontend `getRole` pass), M2M user `6` granted
+  `CanActAs` each. (Ran client-side; auto-mode blocks the agent from writing to the shared node.)
+- **Frontend fully ported to JSON Ledger API v2:**
+  - `FrontEnd/lib/daml/v2client.ts` — low-level v2 transport (ledger-end, active-contracts,
+    submit-and-wait-for-transaction). `FrontEnd/lib/daml/v2ledger.ts` — `VindexLedger` shim exposing
+    `create`/`exercise`/`streamQueries` (streaming = **ACS polling** every 2.5 s, not the WS — browsers
+    can't set the WS `Authorization` header). `CreateEvent`/`Query`/`Stream` types moved here from the
+    dead `@daml/ledger`.
+  - Codegen regenerated from the LF2.1 DAR into `FrontEnd/daml.js` (old → `daml.js.LF1-backup`);
+    templateIds are v2-native (`#vindex:Vindex:…`). `@daml/types` 2.9.4 → **3.5.2**; `@daml/ledger`
+    removed. Rewired `ledger.ts` / `DamlProvider.tsx` / `useStreamQueries.ts` / `config.ts`.
+  - **`tsc --noEmit` = 0 errors.** `npm install` OK (removed 285 pkgs = the `@daml/ledger` tree).
+- **`.env.local` → Seaport** (`.env.local.sandbox-backup` kept): `LEDGER_PROXY_TARGET` = the Seaport
+  ledger-api host, `DAML_AUTH_MODE=hosted` + OIDC vars, party ids. Browser HTTP goes same-origin via the
+  `next.config.mjs` `/ledger/:path*` rewrite → no CORS.
+- **Read path verified LIVE through the app:** `POST /api/daml-token` (hosted OIDC) → token;
+  `GET /ledger/v2/state/ledger-end` (proxied) → `{offset}` 200.
+
+**Still to verify (runtime, needs a write = user action in the browser):** create/exercise round-trip
+(`submit-and-wait-for-transaction`), ACS-poll streaming showing real contracts, and whether commands
+need an explicit `synchronizerId` (set `NEXT_PUBLIC_LEDGER_SYNCHRONIZER_ID` if so). Response-envelope
+parsing in `v2client.ts` is defensive across a few nesting variants — adjust from the first real error.
+Only `Investor`/`Worker`/`Agent` exist on Seaport (not `Public`/`Worker2`) → the INVITE_ONLY single-worker
+path is the demo path; OPEN_POOL/multi-worker needs those allocated too.
+
+## ROADMAP — post-v2 features (decided 2026-07-07)
+
+Order: **(A) verify the v2 write path first**, then (B) + (C).
+
+- **(A) Verify v2 writes** — get `create`/`exercise` working on Seaport. Fixes so far: command body
+  nested under `commands` (was flat → 400); templateId switched to the package-ID form
+  (`#<pkgId>:…` via `templateIdWithPackageId`) to avoid package-name vetting dependence. Retest
+  "Create Investor Party" in-browser; next likely issues = `synchronizerId`, response-envelope shape.
+- **(B) tUSDT — Canton Token Standard (CIP-56).** Chosen: real token-standard asset (Loop wallet can
+  hold/see it), NOT a simple internal token. Implement the `Holding` / `TransferInstruction` /
+  `Metadata` interfaces + a registry template with a `Mint` choice (start from `splice-token-standard-test`
+  examples). Heavy Daml work. Then rebuild + re-upload the DAR to Seaport.
+- **(C) Loop Wallet — full auth replacement.** `@fivenorth/loop-sdk` (fivenorth's own SDK, `devnet`).
+  Replace the M2M-token model: user runs `loop.connect()` (QR) → `provider.party_id` becomes the
+  session party; route `create`/`exercise` through `provider.submitTransaction(damlCommand)` instead
+  of the v2client M2M path; `provider.getHolding()` / `loop.wallet.transfer()` for tUSDT. Big rework of
+  `DamlProvider` + the shim (add a "loop" transport mode alongside the M2M v2client one).
+
+**Deferred:** port `Test.daml` to daml-script 3.x (not needed for the app; tests only).
 
 ## Why a rewrite, not a config swap
 

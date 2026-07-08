@@ -1,5 +1,6 @@
-import Ledger from "@daml/ledger";
 import { damlConfig } from "./config";
+import { VindexLedger } from "./v2ledger";
+import type { V2Config } from "./v2client";
 
 /** Request a real ledger JWT for a party from our server-side token endpoint. */
 export async function fetchToken(party: string): Promise<string> {
@@ -20,30 +21,33 @@ export async function fetchToken(party: string): Promise<string> {
   return token;
 }
 
-/**
- * Construct a real `@daml/ledger` client. The party is carried inside the token's
- * `actAs` claim. `reconnectThreshold` gives automatic websocket reconnection.
- *
- * `@daml/ledger` requires an absolute http(s) base, so a relative proxy path
- * (e.g. "/ledger/") is resolved against the current origin at runtime.
- */
-export function makeLedger(token: string): Ledger {
-  let httpBaseUrl = damlConfig.httpBaseUrl;
-  if (httpBaseUrl.startsWith("/") && typeof window !== "undefined") {
-    httpBaseUrl = `${window.location.origin}${httpBaseUrl}`;
+/** Resolve the (possibly relative "/ledger/") base to an absolute URL in the browser. */
+function absoluteBase(): string {
+  let base = damlConfig.httpBaseUrl;
+  if (base.startsWith("/") && typeof window !== "undefined") {
+    base = `${window.location.origin}${base}`;
   }
-  return new Ledger({
+  return base;
+}
+
+/**
+ * Construct the JSON Ledger API **v2** client shim (Canton 3.x). Replaces `@daml/ledger` (v1-only).
+ * `party` is the connected acting party — v2 sets `actAs` per command, and the client polls that
+ * party's active-contract set for streaming.
+ */
+export function makeLedger(token: string, party: string): VindexLedger {
+  const cfg: V2Config = {
+    httpBase: absoluteBase(),
     token,
-    httpBaseUrl,
-    wsBaseUrl: damlConfig.wsBaseUrl,
-    reconnectThreshold: damlConfig.reconnectThreshold,
-  });
+    synchronizerId: damlConfig.synchronizerId || undefined,
+  };
+  return new VindexLedger(cfg, party);
 }
 
 /** Liveness probe against the JSON API (real network detection). */
 export async function pingLedger(): Promise<boolean> {
   try {
-    const res = await fetch(`${damlConfig.httpBaseUrl}readyz`, { method: "GET" });
+    const res = await fetch(`${absoluteBase().replace(/\/+$/, "")}/readyz`, { method: "GET" });
     return res.ok;
   } catch {
     return false;

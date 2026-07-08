@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CreateEvent, Query } from "@daml/ledger";
+import type { CreateEvent, Query } from "@/lib/daml/v2ledger";
 import type { Template } from "@daml/types";
 import { useDaml } from "@/components/daml/DamlProvider";
 

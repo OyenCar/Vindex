@@ -1,2 +1,3 @@
 import * as Stack from './Stack';
-export { Stack } ;
+
+export { Stack };

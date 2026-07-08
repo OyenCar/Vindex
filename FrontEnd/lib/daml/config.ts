@@ -11,8 +11,11 @@ export type Role = "investor" | "worker" | "agent";
 export const damlConfig = {
   httpBaseUrl: process.env.NEXT_PUBLIC_LEDGER_HTTP_URL ?? "http://localhost:7575/",
   wsBaseUrl: process.env.NEXT_PUBLIC_LEDGER_WS_URL ?? "ws://localhost:7575/",
-  // Auto-reconnect: `@daml/ledger` re-opens dropped websockets when the gap exceeds this (ms).
+  // Auto-reconnect threshold (ms) — retained for config compatibility; the v2 client polls the ACS.
   reconnectThreshold: Number(process.env.NEXT_PUBLIC_LEDGER_RECONNECT_MS ?? 30000),
+  // Canton 3.x: optional explicit synchronizer/domain id for command submission. Empty => the
+  // participant auto-selects. Set NEXT_PUBLIC_LEDGER_SYNCHRONIZER_ID if the ledger requires it.
+  synchronizerId: process.env.NEXT_PUBLIC_LEDGER_SYNCHRONIZER_ID ?? "",
   // Pre-filled party ids per role (hosted: the real allocated party ids). Optional — the
   // connect screen also accepts a pasted party id.
   parties: {

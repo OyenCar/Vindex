@@ -10,8 +10,7 @@
   },
   "dependencies": {
     "@daml.js/vindex-0.1.0": "file:./daml.js/vindex-0.1.0",
-    "@daml/ledger": "2.9.4",
-    "@daml/types": "2.9.4",
+    "@daml/types": "3.5.2",
     "animejs": "^4.5.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

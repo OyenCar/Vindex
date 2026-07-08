@@ -8,14 +8,14 @@ import {
   useRef,
   useState,
 } from "react";
-import type Ledger from "@daml/ledger";
+import type { VindexLedger } from "@/lib/daml/v2ledger";
 import { fetchToken, makeLedger, pingLedger } from "@/lib/daml/ledger";
 import type { Role } from "@/lib/daml/config";
 
 export interface Session {
   party: string;
   role: Role;
-  ledger: Ledger;
+  ledger: VindexLedger;
 }
 
 interface DamlContextValue {
@@ -49,7 +49,7 @@ export function DamlProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const token = await fetchToken(party.trim());
-      const ledger = makeLedger(token);
+      const ledger = makeLedger(token, party.trim());
       setSession({ party: party.trim(), role, ledger });
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ party: party.trim(), role }));
     } catch (e) {
